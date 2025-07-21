@@ -7,7 +7,7 @@ return(
     <div className="login-container">
         <div className="login-logo">
             <img src='https://multisolutionspy.com/images/logo_icono.png' className="login-img"/>
-            <h1 className='logo-title'>Nombre Empresa</h1>
+            <h1 className='logo-title'>Prueba</h1>
         </div>
     <form className='inputs-form'>   
         <input 

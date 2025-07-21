@@ -2,12 +2,12 @@ body {
 
     font-family: sans-serif;
     font-size: small;
+    background-color: rgb(73, 73, 73);
 }
 
 .login-container {
     width: 65vh;
     height: 65vh;
-    background-color: rgb(73, 73, 73);
     border: 1px solid #e0e0e0;
     justify-content: center;
     align-items: center;
@@ -67,7 +67,7 @@ body {
     text-decoration: none;
     color: #000000;
     font-size: 25px;
-    transition: all 0.3s ease;
+    transition: all 1s ease;
 }
 
 .register-button:hover {
