@@ -1,14 +1,15 @@
 import { Link } from 'react-router-dom';
-
+import './Login.css'
 function login(){
 
 return(
 
     <div className="login-container">
         <div className="login-logo">
-            <img src='' className="login-img"/>
+            <img src='https://multisolutionspy.com/images/logo_icono.png' className="login-img"/>
+            <h1 className='logo-title'>Nombre Empresa</h1>
         </div>
-    <form>   
+    <form className='inputs-form'>   
         <input 
         type="text"
         placeholder="Usuario"        
