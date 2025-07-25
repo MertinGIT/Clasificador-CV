@@ -2,7 +2,9 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Login from "./componentes/Login";
 import Register from "./componentes/Register";
 import UploadCV from "./componentes/UploadCv";
+import Sidebar from "./componentes/Sidebar";
 import Navbar from "./componentes/Navbar";
+import ChatCv from "./componentes/ChatCv";
 import "./index.css";
 import "./App.css";
 
@@ -23,7 +25,9 @@ function App() {
 
         <Route path="/Register" element={<Register />} />
         <Route path="/UploadCv" element={<UploadCV />} />
-        <Route path="/navbar" element={<Navbar />} />
+        <Route path="/Sidebar" element={<Sidebar />} />
+        <Route path="/ChatCv" element={<ChatCv />} />
+        <Route path="/Navbar" element={<Navbar />} />
       </Routes>
     </BrowserRouter>
   );
