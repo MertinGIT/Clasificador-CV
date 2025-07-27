@@ -9,7 +9,7 @@ import pdfplumber
 import uuid
 import os
 from dotenv import load_dotenv
-import os
+from ollama import Client as OllamaClient
 
 
 load_dotenv()
@@ -91,3 +91,48 @@ def upload_cv(file: UploadFile = File(...)):
 def search_cvs(query: str):
     results = collection.query(query_texts=[query], n_results=5)
     return {"matches": results}
+
+
+from ollama import Client as OllamaClient
+
+ollama_client = OllamaClient(host='http://localhost:11434')  # Ajustá si tu host es otro
+
+# ========== Funciones para conectar con la LLM ==========
+def query_with_llm(question: str):
+    #Buscar CVs en ChromaDB
+    results = collection.query(query_texts=[question], n_results=5)
+    docs = results.get("documents", [[]])[0]
+    metadatas = results.get("metadatas", [[]])[0]
+
+    #Construir el prompt
+    context = "\n\n".join(
+        f"CV (Role: {meta['role']}, Experience: {meta['experience']}):\n{text}"
+        for text, meta in zip(docs, metadatas)
+    )
+
+    prompt = f"""
+    Estás actuando como un reclutador experto en selección de personal y tienes que encargarte de elegir a lo mejor de lo mejor en en el area. Según los siguientes CVs:
+
+{context}
+
+Responde a la siguiente pregunta del reclutador:
+
+{question}
+    """
+
+    #Enviar a LLM
+    response = ollama_client.chat(
+        model='llama3',
+        messages=[{"role": "user", "content": prompt}]
+    )
+
+    return response['message']['content']
+
+
+@app.get("/ask")
+def ask_llm(query: str):
+    try:
+        answer = query_with_llm(query)
+        return {"answer": answer}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
