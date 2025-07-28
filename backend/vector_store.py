@@ -1,14 +1,12 @@
-# vector_store.py
-
 import chromadb
 from chromadb.config import Settings
 
-client = chromadb.Client(Settings(
-    chroma_db_impl="duckdb+parquet", 
-    persist_directory="./chroma_db"
-))
-
-collection = client.get_or_create_collection(name="cv_embeddings")
+settings = Settings(
+    chroma_db_impl="duckdb+parquet",
+    persist_directory="./chroma_storage"
+)
+chroma_client = chromadb.PersistentClient(path="./chroma_storage")
+collection = chroma_client.get_or_create_collection(name="cv_embeddings")
 
 def add_cv_to_chroma(cv_id: str, content: str, metadata: dict):
     from sentence_transformers import SentenceTransformer

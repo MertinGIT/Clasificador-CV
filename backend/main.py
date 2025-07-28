@@ -1,7 +1,7 @@
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import Column, Integer, String, create_engine, Text
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import declarative_base
 from sqlalchemy.orm import sessionmaker
 import chromadb
 from chromadb.config import Settings
@@ -10,7 +10,8 @@ import uuid
 import os
 from dotenv import load_dotenv
 from ollama import Client as OllamaClient
-
+from chromadb.config import Settings
+import chromadb
 
 load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -42,7 +43,11 @@ class CV(Base):
 Base.metadata.create_all(bind=engine)
 
 # ========== CHROMA DB ==========
-chroma_client = chromadb.Client(Settings(chroma_db_impl="duckdb+parquet", persist_directory="./chroma_storage"))
+settings = Settings(
+    chroma_db_impl="duckdb+parquet",
+    persist_directory="./chroma_storage"
+)
+chroma_client = chromadb.PersistentClient(path="./chroma_storage")
 collection = chroma_client.get_or_create_collection(name="cv_embeddings")
 
 # ========== UTILIDAD PARA EXTRAER TEXTO DE PDF ==========
@@ -69,7 +74,6 @@ def upload_cv(file: UploadFile = File(...)):
     role = "Desarrollador" if "Python" in content else "Otro"
     experience = "Senior" if "5 años" in content else "Junior"
 
-    # Guardar en SQLite
     db = SessionLocal()
     db_cv = CV(filename=file.filename, content=content, role=role, experience=experience)
     db.add(db_cv)
@@ -95,7 +99,7 @@ def search_cvs(query: str):
 
 from ollama import Client as OllamaClient
 
-ollama_client = OllamaClient(host='http://localhost:11434')  # Ajustá si tu host es otro
+ollama_client = OllamaClient(host='http://localhost:11434') 
 
 # ========== Funciones para conectar con la LLM ==========
 def query_with_llm(question: str):

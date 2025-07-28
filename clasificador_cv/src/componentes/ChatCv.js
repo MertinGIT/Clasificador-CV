@@ -34,6 +34,10 @@ export default function ClasificadorCV() {
     idiomas: "",
   });
 
+  const [chatInput, setChatInput] = useState("");
+  const [chatResponse, setChatResponse] = useState("");
+  const [loading, setLoading] = useState(false);
+
   const toggleHabilidad = (skill) => {
     setFiltros((prev) => {
       const nuevas = prev.habilidades.includes(skill)
@@ -43,9 +47,44 @@ export default function ClasificadorCV() {
     });
   };
 
-  const handleBuscar = () => {
-    console.log("Descripción:", busqueda);
-    console.log("Filtros:", filtros);
+  const construirPromptDesdeFiltros = () => {
+    return `
+Busco un perfil profesional en el área de ${
+      filtros.area || "cualquier área"
+    } con aproximadamente ${
+      filtros.experiencia || "alguna"
+    } años de experiencia. 
+Debe tener habilidades como ${
+      filtros.habilidades.join(", ") || "habilidades generales"
+    } y manejar los siguientes idiomas: ${filtros.idiomas || "no especificado"}.
+${busqueda ? `Descripción adicional: ${busqueda}` : ""}
+    `.trim();
+  };
+
+  const handleBuscar = async () => {
+    const prompt = construirPromptDesdeFiltros();
+    await consultarLLM(prompt);
+  };
+
+  const consultarLLM = async (texto) => {
+    try {
+      setLoading(true);
+      const res = await fetch(
+        `http://localhost:8000/ask?query=${encodeURIComponent(texto)}`
+      );
+      const data = await res.json();
+      setChatResponse(data.answer);
+    } catch (err) {
+      setChatResponse("❌ Error al consultar al modelo.");
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleChat = async () => {
+    if (!chatInput.trim()) return;
+    await consultarLLM(chatInput);
   };
 
   return (

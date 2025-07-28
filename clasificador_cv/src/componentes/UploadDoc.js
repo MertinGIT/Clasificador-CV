@@ -74,7 +74,7 @@ function UploadDoc() {
         formData.append("file", file);
 
         const response = await axios.post(
-          "http://localhost:8000/documents/upload",
+          "http://localhost:8000/upload",
           formData,
           {
             headers: {
@@ -84,6 +84,15 @@ function UploadDoc() {
         );
 
         await uploadAnimation;
+
+        const { id, role, experience } = response.data;
+        console.log(`Archivo ${file.name} subido exitosamente:`, response.data);
+
+        setMessage({
+          text: `✅ ${file.name} subido correctamente (Rol: ${role}, Experiencia: ${experience})`,
+          type: "success",
+        });
+
         console.log(`Archivo ${file.name} subido exitosamente:`, response.data);
       } catch (error) {
         console.error(`Error al subir ${file.name}:`, error);
