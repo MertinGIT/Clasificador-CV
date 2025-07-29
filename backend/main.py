@@ -1,8 +1,7 @@
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import Column, Integer, String, create_engine, Text
-from sqlalchemy.orm import declarative_base
-from sqlalchemy.orm import sessionmaker
+from database import engine, SessionLocal
 import chromadb
 from chromadb.config import Settings
 import pdfplumber
@@ -11,6 +10,7 @@ import os
 from dotenv import load_dotenv
 from ollama import Client as OllamaClient
 from chromadb.config import Settings
+from model import Base, CV
 import chromadb
 
 load_dotenv()
@@ -26,20 +26,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Base de datos local con SQLAlchemy
-engine = create_engine(DATABASE_URL)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base = declarative_base()
-
-# ========== MODELO SQLALCHEMY ==========
-class CV(Base):
-    __tablename__ = "cvs"
-    id = Column(Integer, primary_key=True, index=True)
-    filename = Column(String, index=True)
-    content = Column(Text)
-    role = Column(String)
-    experience = Column(String)
-
+# Base de datos con SQLAlchemy
 Base.metadata.create_all(bind=engine)
 
 # ========== CHROMA DB ==========
