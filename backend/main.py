@@ -126,7 +126,7 @@ Responde a la siguiente pregunta del reclutador:
 
     #Enviar a LLM
     response = ollama_client.chat(
-        model='llama3',
+        model='llama2',
         messages=[{"role": "user", "content": prompt}]
     )
 
@@ -140,3 +140,4 @@ def ask_llm(query: str):
         return {"answer": answer}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    
