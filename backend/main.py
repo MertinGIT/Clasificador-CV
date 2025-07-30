@@ -336,10 +336,55 @@ RESPUESTA:
         return f"Error al procesar consulta con LLM: {str(e)}"
 
 @app.get("/ask")
-def ask_llm(query: str):
+def ask_llm(
+    query: str,
+    industry_filter: Optional[str] = None,
+    min_score: Optional[float] = None,
+    role_filter: Optional[str] = None
+):
+    """
+    Realiza consulta inteligente sobre CVs usando LLM
+    """
     try:
-        answer = query_with_llm(query)
-        return {"answer": answer}
+        # Construir filtros opcionales
+        context_filter = {}
+        if industry_filter:
+            context_filter["industry"] = industry_filter
+        if min_score is not None:
+            context_filter["score"] = {"$gte": min_score}
+        if role_filter:
+            context_filter["role"] = role_filter
+        
+        answer = query_with_llm(query, context_filter if context_filter else None)
+        
+        return {
+            "query": query,
+            "filters_applied": {
+                "industry": industry_filter,
+                "min_score": min_score,
+                "role": role_filter
+            },
+            "answer": answer
+        }
+        
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"Error procesando consulta: {str(e)}")
+    
+#========== Endpoints de estadisticas ==========
+@app.get("/stats")
+def get_stats(db: Session = Depends(get_db)):
+    """Obtiene estadísticas generales del sistema"""
+    total_cvs = db.query(CV).count()
+    avg_score = db.query(CV).filter(CV.overall_score.isnot(None)).all()
+    avg_score_value = sum(cv.overall_score for cv in avg_score) / len(avg_score) if avg_score else 0
+    
+    return {
+        "total_cvs": total_cvs,
+        "average_score": round(avg_score_value, 2),
+        "collection_count": collection.count() if hasattr(collection, 'count') else "N/A"
+    }
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000, reload=True)
     
