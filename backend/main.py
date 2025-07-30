@@ -13,6 +13,7 @@ from chromadb.config import Settings
 from model import Base, CV
 import chromadb
 from UniversalCVClassifier import UniversalCVClassifier
+from typing import Dict, List, Optional
 
 load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -155,6 +156,8 @@ def get_cv_analysis(
     
     return analisis
 
+
+# endpoint para listar los CVs
 @app.get("/cvs")
 def list_cvs(
     skip: int = 0,
@@ -198,14 +201,63 @@ def list_cvs(
         "total": query.count()
     }
 
-
-
-
 # ========== ENDPOINT PARA BUSCAR CANDIDATOS ==========
 @app.get("/search")
-def search_cvs(query: str):
-    results = collection.query(query_texts=[query], n_results=5)
-    return {"matches": results}
+def search_cvs(
+    query: str,
+    n_results: int = 10,
+    min_score: Optional[float] = None,
+    industry_filter: Optional[str] = None,
+    role_filter: Optional[str] = None
+):
+    """
+    Busca CVs usando ChromaDB con filtros adicionales
+    """
+    try:
+        # Construir filtros para ChromaDB
+        where_conditions = {}
+        if min_score is not None:
+            where_conditions["score"] = {"$gte": min_score}
+        if industry_filter:
+            where_conditions["industry"] = industry_filter
+        if role_filter:
+            where_conditions["role"] = role_filter
+        
+        # Realizar búsqueda en ChromaDB
+        results = collection.query(
+            query_texts=[query],
+            n_results=n_results,
+            where=where_conditions if where_conditions else None
+        )
+        
+        # Formatear resultados
+        matches = []
+        documents = results.get("documents", [[]])[0]
+        metadatas = results.get("metadatas", [[]])[0]
+        distances = results.get("distances", [[]])[0]
+        
+        for doc, meta, distance in zip(documents, metadatas, distances):
+            matches.append({
+                "cv_id": meta.get("cv_id"),
+                "score": meta.get("score"),
+                "role": meta.get("role"),
+                "experience": meta.get("experience"),
+                "industry": meta.get("industry"),
+                "seniority": meta.get("seniority"),
+                "skills_count": meta.get("skills_count"),
+                "languages_count": meta.get("languages_count"),
+                "similarity": round(1 - distance, 3) if distance else None,
+                "preview": doc[:200] + "..." if len(doc) > 200 else doc
+            })
+        
+        return {
+            "query": query,
+            "total_matches": len(matches),
+            "matches": matches
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error en búsqueda: {str(e)}")
 
 
 from ollama import Client as OllamaClient
