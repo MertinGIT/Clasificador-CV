@@ -265,36 +265,75 @@ from ollama import Client as OllamaClient
 ollama_client = OllamaClient(host='http://localhost:11434') 
 
 # ========== Funciones para conectar con la LLM ==========
-def query_with_llm(question: str):
-    #Buscar CVs en ChromaDB
-    results = collection.query(query_texts=[question], n_results=5)
-    docs = results.get("documents", [[]])[0]
-    metadatas = results.get("metadatas", [[]])[0]
+def query_with_llm(question: str, context_filter: Optional[Dict] = None):
+    """
+    Realiza consulta usando LLM con contexto de CVs
+    """
+    try:
+        # Buscar CVs relevantes en ChromaDB
+        search_params = {
+            "query_texts": [question],
+            "n_results": 5
+        }
+        
+        if context_filter:
+            search_params["where"] = context_filter
+            
+        results = collection.query(**search_params)
+        
+        docs = results.get("documents", [[]])[0]
+        metadatas = results.get("metadatas", [[]])[0]
 
-    #Construir el prompt
-    context = "\n\n".join(
-        f"CV (Role: {meta['role']}, Experience: {meta['experience']}):\n{text}"
-        for text, meta in zip(docs, metadatas)
-    )
+        if not docs:
+            return "No se encontraron CVs relevantes para tu consulta."
 
-    prompt = f"""
-    Estás actuando como un reclutador experto en selección de personal y tienes que encargarte de elegir a lo mejor de lo mejor en en el area. Según los siguientes CVs:
+        # Construir contexto para la LLM
+        context_parts = []
+        for i, (doc, meta) in enumerate(zip(docs, metadatas), 1):
+            context_parts.append(f"""
+CV #{i}:
+- ID: {meta.get('cv_id', 'N/A')}
+- Rol: {meta.get('role', 'N/A')}
+- Experiencia: {meta.get('experience', 'N/A')}
+- Seniority: {meta.get('seniority', 'N/A')}
+- Industria: {meta.get('industry', 'N/A')}
+- Score: {meta.get('score', 'N/A')}/100
+- Contenido (extracto): {doc[:500]}...
+""")
 
+        context = "\n".join(context_parts)
+
+        prompt = f"""
+Eres un reclutador senior experto en selección de personal con más de 10 años de experiencia. 
+Tu especialidad es identificar el talento ideal basándote en CVs y matching con requisitos específicos.
+
+CONTEXTO - CVs disponibles:
 {context}
 
-Responde a la siguiente pregunta del reclutador:
-
+CONSULTA DEL RECLUTADOR:
 {question}
-    """
 
-    #Enviar a LLM
-    response = ollama_client.chat(
-        model='llama2',
-        messages=[{"role": "user", "content": prompt}]
-    )
+INSTRUCCIONES:
+- Analiza cada CV de forma crítica y profesional
+- Proporciona recomendaciones específicas basadas en los datos
+- Si recomiendas candidatos, explica exactamente por qué
+- Menciona fortalezas y posibles áreas de preocupación
+- Sé conciso pero detallado en tu análisis
+- Si ningún CV es adecuado, explica qué se necesitaría buscar
 
-    return response['message']['content']
+RESPUESTA:
+        """
 
+        # Enviar a LLM
+        response = ollama_client.chat(
+            model='llama2',  # Puedes cambiar el modelo según disponibilidad
+            messages=[{"role": "user", "content": prompt}]
+        )
+
+        return response['message']['content']
+        
+    except Exception as e:
+        return f"Error al procesar consulta con LLM: {str(e)}"
 
 @app.get("/ask")
 def ask_llm(query: str):
