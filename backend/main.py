@@ -141,6 +141,66 @@ async def upload_cv(
             os.remove(temp_file)
 
             
+@app.get("/cv/{cv_id}/analisis")
+def get_cv_analysis(
+    cv_id: int,
+    classifier: UniversalCVClassifier = Depends(get_classifier)
+):
+    """
+    Obtiene análisis detallado de un CV específico
+    """
+    analisis = classifier.get_cv_analysis(cv_id)
+    if not analisis:
+        raise HTTPException(status_code=404, detail="CV no encontrado")
+    
+    return analisis
+
+@app.get("/cvs")
+def list_cvs(
+    skip: int = 0,
+    limit: int = 20,
+    min_score: Optional[float] = None,
+    industry: Optional[str] = None,
+    role: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    """
+    Lista CVs con filtros opcionales
+    """
+    query = db.query(CV)
+    
+    if min_score is not None:
+        query = query.filter(CV.overall_score >= min_score)
+    
+    if industry:
+        query = query.join(CV.industria).filter(CV.industria.has(nombre=industry))
+    
+    if role:
+        query = query.join(CV.rol).filter(CV.rol.has(nombre=role))
+    
+    cvs = query.offset(skip).limit(limit).all()
+    
+    return {
+        "cvs": [
+            {
+                "id": cv.id,
+                "filename": cv.filename,
+                "nombre": cv.nombre_completo,
+                "score": cv.overall_score,
+                "industria": cv.industria.nombre if cv.industria else None,
+                "rol": cv.rol.nombre if cv.rol else None,
+                "experiencia": cv.anhos_experiencia,
+                "email": cv.email,
+                "created_at": cv.created_at if hasattr(cv, 'created_at') else None
+            }
+            for cv in cvs
+        ],
+        "total": query.count()
+    }
+
+
+
+
 # ========== ENDPOINT PARA BUSCAR CANDIDATOS ==========
 @app.get("/search")
 def search_cvs(query: str):
