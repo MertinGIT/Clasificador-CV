@@ -1,6 +1,6 @@
-from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi import FastAPI, File, UploadFile, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import Column, Integer, String, create_engine, Text
+from sqlalchemy.orm import Session
 from database import engine, SessionLocal
 import chromadb
 from chromadb.config import Settings
@@ -12,6 +12,7 @@ from ollama import Client as OllamaClient
 from chromadb.config import Settings
 from model import Base, CV
 import chromadb
+from UniversalCVClassifier import UniversalCVClassifier
 
 load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -29,6 +30,17 @@ app.add_middleware(
 # Base de datos con SQLAlchemy
 Base.metadata.create_all(bind=engine)
 
+# Inyectamos la dependencia
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+def get_classifier(db: Session = Depends(get_db)):
+    return UniversalCVClassifier(db)
+
 # ========== CHROMA DB ==========
 settings = Settings(
     chroma_db_impl="duckdb+parquet",
@@ -39,44 +51,96 @@ collection = chroma_client.get_or_create_collection(name="cv_embeddings")
 
 # ========== UTILIDAD PARA EXTRAER TEXTO DE PDF ==========
 def extract_text_from_pdf(file) -> str:
-    with pdfplumber.open(file) as pdf:
-        text = "\n".join(page.extract_text() or "" for page in pdf.pages)
-    return text
+    try:
+        with pdfplumber.open(file) as pdf:
+            text = "\n".join(page.extract_text() or "" for page in pdf.pages)
+        return text.strip()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error al procesar PDF: {str(e)}") 
 
 # ========== ENDPOINT PARA SUBIR UN CV ==========
 @app.post("/upload")
-def upload_cv(file: UploadFile = File(...)):
+async def upload_cv(
+    file: UploadFile = File(...),
+    classifier: UniversalCVClassifier = Depends(get_classifier)
+):
+    """
+    Sube y procesa un CV PDF usando el UniversalCVClassifier
+    """
     if not file.filename.endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Solo se permiten archivos PDF")
 
     # Guardar archivo temporal
     temp_file = f"temp_{uuid.uuid4()}.pdf"
-    with open(temp_file, "wb") as f:
-        f.write(file.file.read())
+    try:
+        # Guardar archivo temporalmente
+        with open(temp_file, "wb") as f:
+            content = await file.read()
+            f.write(content)
 
-    # Extraer texto
-    content = extract_text_from_pdf(temp_file)
+        # Extraer texto del PDF
+        text_content = extract_text_from_pdf(temp_file)
+        
+        if not text_content.strip():
+            raise HTTPException(status_code=400, detail="No se pudo extraer texto del PDF")
 
-    # Simular clasificación usando palabras clave
-    role = "Desarrollador" if "Python" in content else "Otro"
-    experience = "Senior" if "5 años" in content else "Junior"
+        # Procesar CV con el clasificador avanzado
+        cv = classifier.save_cv(text_content, file.filename)
+        
+        # Crear metadata para ChromaDB
+        metadata = {
+            "cv_id": cv.id,
+            "role": cv.rol.nombre if cv.rol else "No especificado",
+            "experience": f"{cv.anhos_experiencia} años",
+            "seniority": classifier.classify_seniority(text_content, cv.anhos_experiencia),
+            "industry": cv.industria.nombre if cv.industria else "No especificado",
+            "score": cv.overall_score,
+            "skills_count": len(cv.habilidades),
+            "languages_count": len(cv.lenguajes)
+        }
+        
+        # Guardar en ChromaDB para búsquedas semánticas
+        collection.add(
+            documents=[text_content],
+            metadatas=[metadata],
+            ids=[str(cv.id)]
+        )
 
-    db = SessionLocal()
-    db_cv = CV(filename=file.filename, content=content, role=role, experience=experience)
-    db.add(db_cv)
-    db.commit()
-    db.refresh(db_cv)
+        # Preparar respuesta con información detallada
+        response_data = {
+            "status": "success",
+            "cv_id": cv.id,
+            "filename": cv.filename,
+            "overall_score": cv.overall_score,
+            "analysis": {
+                "nombre": cv.nombre_completo,
+                "email": cv.email,
+                "telefono": cv.telefono,
+                "industria": cv.industria.nombre if cv.industria else None,
+                "rol": cv.rol.nombre if cv.rol else None,
+                "puesto": cv.puesto.nombre if cv.puesto else None,
+                "anhos_experiencia": cv.anhos_experiencia,
+                "seniority": classifier.classify_seniority(text_content, cv.anhos_experiencia),
+                "habilidades": [h.nombre for h in cv.habilidades][:10],  # Mostrar solo primeras 10
+                "idiomas": [l.nombre for l in cv.lenguajes],
+                "redes_sociales": {
+                    "linkedin": cv.linkedin_url,
+                    "github": cv.github_url,
+                    "portafolio": cv.portafolio_url
+                }
+            }
+        }
+        
+        return response_data
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error procesando CV: {str(e)}")
+    finally:
+        # Limpiar archivo temporal
+        if os.path.exists(temp_file):
+            os.remove(temp_file)
 
-    # Guardar embedding en ChromaDB (simulado como texto plano por ahora)
-    collection.add(
-        documents=[content],
-        metadatas=[{"role": role, "experience": experience}],
-        ids=[str(db_cv.id)]
-    )
-
-    os.remove(temp_file)
-    return {"status": "ok", "id": db_cv.id, "role": role, "experience": experience}
-
+            
 # ========== ENDPOINT PARA BUSCAR CANDIDATOS ==========
 @app.get("/search")
 def search_cvs(query: str):
