@@ -42,6 +42,72 @@ def get_db():
 def get_classifier(db: Session = Depends(get_db)):
     return UniversalCVClassifier(db)
 
+# Funciones embedding
+def generate_embedding(text: str, model: str = "nomic-embed-text"):
+    """
+    Genera embeddings usando Ollama
+    """
+    try:
+        response = ollama_client.embeddings(model=model, prompt=text)
+        return response["embedding"]
+    except Exception as e:
+        print(f"Error generando embedding: {e}")
+        # Fallback: usar el texto como embedding simple (solo para desarrollo)
+        return None
+    
+def create_cv_embedding_text(cv_data: Dict) -> str:
+    """
+    Crea un texto optimizado para embeddings combinando datos clave del CV.
+    """
+    embedding_parts = []
+
+    # Información personal
+    nombre = cv_data.get("nombre", "").strip()
+    if nombre:
+        embedding_parts.append(f"Nombre: {nombre}")
+
+    # Información profesional
+    rol = cv_data.get("rol", "").strip()
+    if rol:
+        embedding_parts.append(f"Rol: {rol.lower()}")
+
+    industria = cv_data.get("industria", "").strip()
+    if industria:
+        embedding_parts.append(f"Industria: {industria.lower()}")
+
+    experiencia = cv_data.get("experiencia")
+    if experiencia is not None:
+        try:
+            años = float(experiencia)
+            embedding_parts.append(f"Experiencia: {años} años")
+        except ValueError:
+            embedding_parts.append(f"Experiencia: {experiencia}")
+
+    seniority = cv_data.get("seniority", "").strip()
+    if seniority:
+        embedding_parts.append(f"Nivel: {seniority.lower()}")
+
+    # Habilidades
+    habilidades = cv_data.get("habilidades", [])
+    if isinstance(habilidades, list) and habilidades:
+        skills_text = ", ".join(h.lower().strip() for h in habilidades[:15])
+        embedding_parts.append(f"Habilidades: {skills_text}")
+
+    # Idiomas
+    idiomas = cv_data.get("idiomas", [])
+    if isinstance(idiomas, list) and idiomas:
+        languages_text = ", ".join(i.lower().strip() for i in idiomas)
+        embedding_parts.append(f"Idiomas: {languages_text}")
+
+    # Contenido original (extracto)
+    contenido = cv_data.get("contenido_original", "")
+    if contenido:
+        content_words = contenido.strip().split()
+        excerpt = " ".join(content_words[:500])
+        embedding_parts.append(f"Contenido: {excerpt}")
+
+    return " | ".join(embedding_parts)
+
 # ========== CHROMA DB ==========
 settings = Settings(
     chroma_db_impl="duckdb+parquet",
