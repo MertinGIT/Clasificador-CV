@@ -24,7 +24,6 @@ class UniversalCVClassifier:
 
     def extract_contact_info(self, text: str) -> Dict[str, Optional[str]]:
         """Extrae información de contacto del CV"""
-        # Email mejorado
         email_match = re.search(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b", text)
         
         # Teléfono mejorado (incluye formatos internacionales)
