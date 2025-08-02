@@ -14,12 +14,16 @@ from model import Base, CV
 import chromadb
 from UniversalCVClassifier import UniversalCVClassifier
 from typing import Dict, List, Optional
+import unidecode
+
+# Importar el nuevo procesador con Ollama
+from ollama_cv_processor import OllamaCVProcessor, CVAnalysis, create_cv_embedding_text_enhanced
 
 load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 # ========== CONFIGURACIÓN BÁSICA ==========
-app = FastAPI()
+app = FastAPI(title="CV Analysis API with Ollama", version="2.0.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -31,7 +35,10 @@ app.add_middleware(
 # Base de datos con SQLAlchemy
 Base.metadata.create_all(bind=engine)
 
-# Inyectamos la dependencia
+# Cliente Ollama
+ollama_client = OllamaClient(host='http://localhost:11434')
+
+# Inyectamos las dependencias
 def get_db():
     db = SessionLocal()
     try:
@@ -42,7 +49,11 @@ def get_db():
 def get_classifier(db: Session = Depends(get_db)):
     return UniversalCVClassifier(db)
 
-# Funciones embedding
+def get_ollama_processor():
+    """Retorna el procesador de CVs con Ollama"""
+    return OllamaCVProcessor(ollama_client, model="llama2")  # Puedes cambiar el modelo
+
+# Funciones embedding (actualizadas)
 def generate_embedding(text: str, model: str = "nomic-embed-text"):
     """
     Genera embeddings usando Ollama
@@ -52,61 +63,7 @@ def generate_embedding(text: str, model: str = "nomic-embed-text"):
         return response["embedding"]
     except Exception as e:
         print(f"Error generando embedding: {e}")
-        # Fallback: usar el texto como embedding simple (solo para desarrollo)
         return None
-    
-def create_cv_embedding_text(cv_data: Dict) -> str:
-    """
-    Crea un texto optimizado para embeddings combinando datos clave del CV.
-    """
-    embedding_parts = []
-
-    # Información personal
-    nombre = cv_data.get("nombre", "").strip()
-    if nombre:
-        embedding_parts.append(f"Nombre: {nombre}")
-
-    # Información profesional
-    rol = cv_data.get("rol", "").strip()
-    if rol:
-        embedding_parts.append(f"Rol: {rol.lower()}")
-
-    industria = cv_data.get("industria", "").strip()
-    if industria:
-        embedding_parts.append(f"Industria: {industria.lower()}")
-
-    experiencia = cv_data.get("experiencia")
-    if experiencia is not None:
-        try:
-            años = float(experiencia)
-            embedding_parts.append(f"Experiencia: {años} años")
-        except ValueError:
-            embedding_parts.append(f"Experiencia: {experiencia}")
-
-    seniority = cv_data.get("seniority", "").strip()
-    if seniority:
-        embedding_parts.append(f"Nivel: {seniority.lower()}")
-
-    # Habilidades
-    habilidades = cv_data.get("habilidades", [])
-    if isinstance(habilidades, list) and habilidades:
-        skills_text = ", ".join(h.lower().strip() for h in habilidades[:15])
-        embedding_parts.append(f"Habilidades: {skills_text}")
-
-    # Idiomas
-    idiomas = cv_data.get("idiomas", [])
-    if isinstance(idiomas, list) and idiomas:
-        languages_text = ", ".join(i.lower().strip() for i in idiomas)
-        embedding_parts.append(f"Idiomas: {languages_text}")
-
-    # Contenido original (extracto)
-    contenido = cv_data.get("contenido_original", "")
-    if contenido:
-        content_words = contenido.strip().split()
-        excerpt = " ".join(content_words[:500])
-        embedding_parts.append(f"Contenido: {excerpt}")
-
-    return " | ".join(embedding_parts)
 
 # ========== CHROMA DB ==========
 settings = Settings(
@@ -114,32 +71,43 @@ settings = Settings(
     persist_directory="./chroma_storage"
 )
 chroma_client = chromadb.PersistentClient(path="./chroma_storage")
-collection = chroma_client.get_or_create_collection(name="cv_embeddings")
+collection_name = "cv_embeddings"
+
+# Eliminar colección existente si hay conflicto de dimensiones
+existing_collections = chroma_client.list_collections()
+if any(c.name == collection_name for c in existing_collections):
+    chroma_client.delete_collection(name=collection_name)
+
+# Crear o recrear colección
+collection = chroma_client.get_or_create_collection(name=collection_name)
 
 # ========== UTILIDAD PARA EXTRAER TEXTO DE PDF ==========
 def extract_text_from_pdf(file) -> str:
     try:
         with pdfplumber.open(file) as pdf:
             text = "\n".join(page.extract_text() or "" for page in pdf.pages)
+            print(f"[INFO] Texto extraído del PDF: {(text)}")
         return text.strip()
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error al procesar PDF: {str(e)}") 
 
-# ========== ENDPOINT PARA SUBIR UN CV ==========
+# ========== ENDPOINT PRINCIPAL de subida ==========
 @app.post("/upload")
-async def upload_cv(
+async def upload_cv_with_ollama_corrected(
     file: UploadFile = File(...),
-    classifier: UniversalCVClassifier = Depends(get_classifier)
+    classifier: UniversalCVClassifier = Depends(get_classifier),
+    ollama_processor: OllamaCVProcessor = Depends(get_ollama_processor)
 ):
     """
-    Sube y procesa un CV PDF usando el UniversalCVClassifier
+    Sube y procesa un CV PDF usando Ollama con lógica corregida
     """
     if not file.filename.endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Solo se permiten archivos PDF")
 
-    # Guardar archivo temporal
     temp_file = f"temp_{uuid.uuid4()}.pdf"
     try:
+        print(f"[INFO] Procesando archivo: {file.filename}")
+        
         # Guardar archivo temporalmente
         with open(temp_file, "wb") as f:
             content = await file.read()
@@ -151,36 +119,53 @@ async def upload_cv(
         if not text_content.strip():
             raise HTTPException(status_code=400, detail="No se pudo extraer texto del PDF")
 
-        # Procesar CV con el clasificador avanzado
-        cv = classifier.save_cv(text_content, file.filename)
-
-        cv_embedding_data = {
-            "nombre": cv.nombre_completo,
-            "rol": cv.rol.nombre if cv.rol else None,
-            "industria": cv.industria.nombre if cv.industria else None,
-            "experiencia": cv.anhos_experiencia,
-            "seniority": classifier.classify_seniority(text_content, cv.anhos_experiencia),
-            "habilidades": [h.nombre for h in cv.habilidades],
-            "idiomas": [l.nombre for l in cv.lenguajes],
-            "contenido_original": text_content
-        }
+        print(f"[INFO] Iniciando análisis con Ollama...")
         
-        embedding_text = create_cv_embedding_text(cv_embedding_data)
+        # ===== Procesar con Ollama =====
+        analysis = ollama_processor.process_cv_with_ollama(text_content)
         
-        # Crear metadata para ChromaDB
+        print(f"[SUCCESS] Análisis de Ollama completado:")
+        print(f"  - Candidato: {analysis.nombre}")
+        print(f"  - Rol sugerido: {analysis.rol_sugerido}")
+        print(f"  - Seniority: {analysis.seniority}")
+        print(f"  - Sector: {analysis.sector}")
+        print(f"  - Score: {analysis.overall_score}")
+        
+        # ===== Guardar usando la nueva lógica =====
+        try:
+            # Usar el método corregido
+            cv = classifier.save_cv_from_analysis_corrected(analysis, file.filename)
+            processing_method = "ollama_corrected_logic"
+            
+        except Exception as e:
+            # Fallback al método anterior si falla
+            print(f"[WARNING] Error con nueva lógica, usando método clásico: {e}")
+            cv = classifier.save_cv(text_content, file.filename)
+            processing_method = "classic_fallback"
+        
+        # ===== CREAR EMBEDDING MEJORADO =====
+        embedding_text = create_cv_embedding_text_enhanced(analysis)
+        
+        # Crear metadata enriquecida para ChromaDB
         metadata = {
             "cv_id": cv.id,
-            "role": cv.rol.nombre if cv.rol else "No especificado",
-            "experience": f"{cv.anhos_experiencia} años",
-            "seniority": classifier.classify_seniority(text_content, cv.anhos_experiencia),
-            "industry": cv.industria.nombre if cv.industria else "No especificado",
-            "score": cv.overall_score,
-            "skills_count": len(cv.habilidades),
-            "languages_count": len(cv.lenguajes)
+            "nombre": analysis.nombre,
+            "filename": file.filename,
+            "role": analysis.rol_sugerido,
+            "seniority": analysis.seniority,
+            "experience": f"{analysis.anos_experiencia} años",
+            "industry": analysis.sector,
+            "score": analysis.overall_score,
+            "skills_count": len(analysis.habilidades_tecnicas),
+            "languages_count": len(analysis.idiomas),
+            "soft_skills_count": len(analysis.soft_skills),
+            "calidad_cv": analysis.calidad_cv,
+            "processing_method": processing_method
         }
-
+        
+        print(f"[INFO] Generando embedding...")
         embedding = generate_embedding(embedding_text)
-
+        
         if embedding:
             collection.add(
                 documents=[embedding_text], 
@@ -188,133 +173,158 @@ async def upload_cv(
                 metadatas=[metadata],
                 ids=[str(cv.id)]
             )
-        else:
-            # Fallback sin embedding
-            print(f"Warning: No se pudo generar embedding para CV {cv.id}, usando solo texto")
-            collection.add(
-                documents=[embedding_text],
-                metadatas=[metadata],
-                ids=[str(cv.id)]
-            )
-        # Preparar respuesta con información detallada
+            print(f"[SUCCESS] Embedding guardado en ChromaDB")
+        
+        # ===== RESPUESTA ENRIQUECIDA CON NUEVA LÓGICA =====
         response_data = {
             "status": "success",
             "cv_id": cv.id,
-            "filename": cv.filename,
-            "overall_score": cv.overall_score,
-            "analysis": {
-                "nombre": cv.nombre_completo,
-                "email": cv.email,
-                "telefono": cv.telefono,
-                "industria": cv.industria.nombre if cv.industria else None,
-                "rol": cv.rol.nombre if cv.rol else None,
-                "puesto": cv.puesto.nombre if cv.puesto else None,
-                "anhos_experiencia": cv.anhos_experiencia,
-                "seniority": classifier.classify_seniority(text_content, cv.anhos_experiencia),
-                "habilidades": [h.nombre for h in cv.habilidades][:20],  
-                "idiomas": [l.nombre for l in cv.lenguajes],
-                "redes_sociales": {
-                    "linkedin": cv.linkedin_url,
-                    "github": cv.github_url,
-                    "portafolio": cv.portafolio_url
+            "filename": file.filename,
+            "processing_method": processing_method,
+            
+            # Análisis de Ollama
+            "ollama_analysis": {
+                "nombre": analysis.nombre,
+                "email": analysis.email,
+                "telefono": analysis.telefono,
+                "linkedin": analysis.linkedin,
+                
+                "perfil_profesional": {
+                    "rol_sugerido": analysis.rol_sugerido,
+                    "seniority": analysis.seniority,
+                    "sector": analysis.sector,
+                    "anos_experiencia": analysis.anos_experiencia,
+                    "resumen_profesional": analysis.resumen_profesional
+                },
+                
+                "competencias": {
+                    "habilidades_tecnicas": analysis.habilidades_tecnicas,
+                    "soft_skills": analysis.soft_skills,
+                    "idiomas": analysis.idiomas
+                },
+                
+                "evaluacion": {
+                    "overall_score": analysis.overall_score,
+                    "calidad_cv": analysis.calidad_cv,
+                    "fortalezas": analysis.fortalezas,
+                    "areas_mejora": analysis.areas_mejora
                 }
+            },
+            
+            # Clasificación final en BD (nueva lógica)
+            "clasificacion_bd": {
+                "rol": {
+                    "nombre": cv.rol.nombre if cv.rol else None,
+                    "descripcion": cv.rol.descripcion if cv.rol else None
+                },
+                "seniority": {
+                    "nombre": cv.puesto.nombre if cv.puesto else None,
+                    "rango_años": f"{cv.puesto.min_anhos}-{cv.puesto.max_anhos or '+'}" if cv.puesto else None
+                },
+                "industria_principal": {
+                    "nombre": cv.industria.nombre if cv.industria else None,
+                    "descripcion": cv.industria.descripcion if cv.industria else None
+                },
+                "score_final": cv.overall_score,
+                "años_experiencia": cv.anhos_experiencia
             }
         }
         
         return response_data
         
     except Exception as e:
+        print(f"[ERROR] Error procesando CV: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error procesando CV: {str(e)}")
     finally:
         # Limpiar archivo temporal
         if os.path.exists(temp_file):
             os.remove(temp_file)
 
-            
-@app.get("/cv/{cv_id}/analisis")
-def get_cv_analysis(
+# ========== ENDPOINT DE ANÁLISIS DETALLADO ==========
+@app.get("/cv/{cv_id}/analisis-completo")
+def get_complete_cv_analysis(
     cv_id: int,
-    classifier: UniversalCVClassifier = Depends(get_classifier)
-):
-    """
-    Obtiene análisis detallado de un CV específico
-    """
-    analisis = classifier.get_cv_analysis(cv_id)
-    if not analisis:
-        raise HTTPException(status_code=404, detail="CV no encontrado")
-    
-    return analisis
-
-
-# endpoint para listar los CVs
-@app.get("/cvs")
-def list_cvs(
-    skip: int = 0,
-    limit: int = 20,
-    min_score: Optional[float] = None,
-    industry: Optional[str] = None,
-    role: Optional[str] = None,
     db: Session = Depends(get_db)
 ):
     """
-    Lista CVs con filtros opcionales
+    Obtiene análisis completo del CV incluyendo datos de Ollama si están disponibles
     """
-    query = db.query(CV)
+    cv = db.query(CV).filter(CV.id == cv_id).first()
+    if not cv:
+        raise HTTPException(status_code=404, detail="CV no encontrado")
     
-    if min_score is not None:
-        query = query.filter(CV.overall_score >= min_score)
-    
-    if industry:
-        query = query.join(CV.industria).filter(CV.industria.has(nombre=industry))
-    
-    if role:
-        query = query.join(CV.rol).filter(CV.rol.has(nombre=role))
-    
-    cvs = query.offset(skip).limit(limit).all()
-    
-    return {
-        "cvs": [
-            {
-                "id": cv.id,
-                "filename": cv.filename,
-                "nombre": cv.nombre_completo,
-                "score": cv.overall_score,
-                "industria": cv.industria.nombre if cv.industria else None,
-                "rol": cv.rol.nombre if cv.rol else None,
-                "experiencia": cv.anhos_experiencia,
-                "email": cv.email,
-                "created_at": cv.created_at if hasattr(cv, 'created_at') else None
+    # Buscar en ChromaDB para obtener metadata enriquecida
+    try:
+        results = collection.get(ids=[str(cv_id)], include=["metadatas", "documents"])
+        if results["ids"]:
+            metadata = results["metadatas"][0]
+            document = results["documents"][0]
+            
+            return {
+                "cv_info": {
+                    "id": cv.id,
+                    "filename": cv.filename,
+                    "created_at": cv.created_at if hasattr(cv, 'created_at') else None
+                },
+                "enhanced_metadata": metadata,
+                "embedding_text": document,
+                "classic_data": {
+                    "nombre": cv.nombre_completo,
+                    "email": cv.email,
+                    "telefono": cv.telefono,
+                    "industria": cv.industria.nombre if cv.industria else None,
+                    "rol": cv.rol.nombre if cv.rol else None,
+                    "score": cv.overall_score,
+                    "habilidades": [h.nombre for h in cv.habilidades],
+                    "idiomas": [l.nombre for l in cv.lenguajes]
+                }
             }
-            for cv in cvs
-        ],
-        "total": query.count()
+    except Exception as e:
+        print(f"[WARNING] Error obteniendo datos de ChromaDB: {e}")
+    
+    # Fallback a datos clásicos
+    return {
+        "cv_info": {
+            "id": cv.id,
+            "filename": cv.filename
+        },
+        "classic_data": {
+            "nombre": cv.nombre_completo,
+            "email": cv.email,
+            "score": cv.overall_score,
+            "habilidades": [h.nombre for h in cv.habilidades]
+        }
     }
 
-# ========== ENDPOINT PARA BUSCAR CANDIDATOS ==========
+# ========== BÚSQUEDA MEJORADA ==========
 @app.get("/search")
-def search_cvs(
+def search_cvs_enhanced(
     query: str,
     n_results: int = 10,
     min_score: Optional[float] = None,
     industry_filter: Optional[str] = None,
     role_filter: Optional[str] = None,
+    seniority_filter: Optional[str] = None,
     use_embeddings: bool = True
 ):
     """
-    Busca CVs usando ChromaDB con embeddings semánticos y filtros adicionales
+    Búsqueda avanzada con filtros de Ollama
     """
     try:
-        # Construir filtros para ChromaDB
+        # Construir filtros mejorados
         where_conditions = {}
         if min_score is not None:
             where_conditions["score"] = {"$gte": min_score}
         if industry_filter:
             where_conditions["industry"] = industry_filter
         if role_filter:
-            where_conditions["role"] = role_filter
+            where_conditions["role"] = {"$contains": role_filter}
+        if seniority_filter:
+            where_conditions["seniority"] = seniority_filter
         
         if use_embeddings:
             # Generar embedding para la consulta
+            print("Usa embeddings")
             query_embedding = generate_embedding(query)
             
             if query_embedding:
@@ -339,7 +349,7 @@ def search_cvs(
                 where=where_conditions if where_conditions else None
             )
         
-        # Formatear resultados
+        # Formatear resultados mejorados
         matches = []
         documents = results.get("documents", [[]])[0]
         metadatas = results.get("metadatas", [[]])[0]
@@ -351,21 +361,23 @@ def search_cvs(
             
             matches.append({
                 "cv_id": meta.get("cv_id"),
-                "nombre": meta.get("nombre"),
-                "filename": meta.get("filename"),
-                "score": meta.get("score"),
-                "role": meta.get("role"),
-                "experience": meta.get("experience"),
-                "industry": meta.get("industry"),
-                "seniority": meta.get("seniority"),
-                "skills_count": meta.get("skills_count"),
-                "languages_count": meta.get("languages_count"),
+                "nombre": meta.get("nombre", "N/A"),
+                "filename": meta.get("filename", "N/A"),
+                "score": meta.get("score", 0),
+                "role": meta.get("role", "N/A"),
+                "seniority": meta.get("seniority", "N/A"),
+                "experience": meta.get("experience", "N/A"),
+                "industry": meta.get("industry", "N/A"),
+                "skills_count": meta.get("skills_count", 0),
+                "soft_skills_count": meta.get("soft_skills_count", 0),
+                "languages_count": meta.get("languages_count", 0),
+                "calidad_cv": meta.get("calidad_cv", "N/A"),
                 "similarity": similarity_score,
                 "match_strength": "Excelente" if similarity_score and similarity_score > 0.8 
                                 else "Bueno" if similarity_score and similarity_score > 0.6 
                                 else "Regular" if similarity_score and similarity_score > 0.4 
                                 else "Bajo",
-                "preview": doc[:200] + "..." if len(doc) > 200 else doc
+                "preview": doc[:300] + "..." if len(doc) > 300 else doc
             })
         
         # Ordenar por similitud si está disponible
@@ -374,11 +386,12 @@ def search_cvs(
         
         return {
             "query": query,
-            "search_method": "embeddings" if use_embeddings and query_embedding else "text",
+            "search_method": "ollama_enhanced_embeddings" if use_embeddings and query_embedding else "text",
             "filters_applied": {
                 "min_score": min_score,
                 "industry": industry_filter,
-                "role": role_filter
+                "role": role_filter,
+                "seniority": seniority_filter
             },
             "total_matches": len(matches),
             "matches": matches
@@ -387,21 +400,57 @@ def search_cvs(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error en búsqueda: {str(e)}")
 
-from ollama import Client as OllamaClient
-
-ollama_client = OllamaClient(host='http://localhost:11434') 
-
-# ========== Funciones para conectar con la LLM ==========
-def query_with_llm(question: str, context_filter: Optional[Dict] = None):
+# ========== CONSULTA CON LLM MEJORADA ==========
+@app.get("/ask")
+def ask_llm_enhanced(
+    query: str,
+    industry_filter: Optional[str] = None,
+    min_score: Optional[float] = None,
+    role_filter: Optional[str] = None,
+    seniority_filter: Optional[str] = None
+):
     """
-    Realiza consulta usando LLM con contexto de CVs y embeddings
+    Consulta inteligente mejorada con datos de Ollama
+    """
+    try:
+        # Construir filtros opcionales
+        context_filter = {}
+        if industry_filter:
+            context_filter["industry"] = industry_filter
+        if min_score is not None:
+            context_filter["score"] = {"$gte": min_score}
+        if role_filter:
+            context_filter["role"] = {"$contains": role_filter}
+        if seniority_filter:
+            context_filter["seniority"] = seniority_filter
+        
+        answer = query_with_llm_enhanced(query, context_filter if context_filter else None)
+        
+        return {
+            "query": query,
+            "filters_applied": {
+                "industry": industry_filter,
+                "min_score": min_score,
+                "role": role_filter,
+                "seniority": seniority_filter
+            },
+            "answer": answer,
+            "processing_method": "ollama_enhanced"
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error procesando consulta: {str(e)}")
+
+def query_with_llm_enhanced(question: str, context_filter: Optional[Dict] = None):
+    """
+    Consulta mejorada usando LLM con contexto enriquecido de Ollama
     """
     try:
         # Generar embedding para la pregunta
         question_embedding = generate_embedding(question)
         
         # Configurar parámetros de búsqueda
-        search_params = {"n_results": 5}
+        search_params = {"n_results": 5, "include": ["metadatas", "documents", "distances"]}
         
         if context_filter:
             search_params["where"] = context_filter
@@ -421,24 +470,34 @@ def query_with_llm(question: str, context_filter: Optional[Dict] = None):
         if not docs:
             return "No se encontraron CVs relevantes para tu consulta."
 
-        # Construir contexto enriquecido para la LLM
+        # Construir contexto super enriquecido para la LLM
         context_parts = []
         for i, (doc, meta, distance) in enumerate(zip(docs, metadatas, distances), 1):
             similarity = round(1 - distance, 3) if distance is not None else "N/A"
             
             context_parts.append(f"""
-CV #{i} (Relevancia: {similarity}):
-- ID: {meta.get('cv_id', 'N/A')}
-- Nombre: {meta.get('nombre', 'N/A')}
-- Archivo: {meta.get('filename', 'N/A')}
-- Rol: {meta.get('role', 'N/A')}
-- Experiencia: {meta.get('experience', 'N/A')}
-- Seniority: {meta.get('seniority', 'N/A')}
-- Industria: {meta.get('industry', 'N/A')}
-- Score Global: {meta.get('score', 'N/A')}/100
-- Habilidades: {meta.get('skills_count', 'N/A')} detectadas
-- Idiomas: {meta.get('languages_count', 'N/A')} detectados
-- Contenido relevante: {doc[:400]}...
+CANDIDATO #{i} (Relevancia semántica: {similarity}):
+═══════════════════════════════════════════════════════════════════════
+• ID: {meta.get('cv_id', 'N/A')}
+• Nombre: {meta.get('nombre', 'N/A')}
+• Archivo: {meta.get('filename', 'N/A')}
+
+PERFIL PROFESIONAL:
+• Rol: {meta.get('role', 'N/A')}
+• Seniority: {meta.get('seniority', 'N/A')}
+• Experiencia: {meta.get('experience', 'N/A')}
+• Industria: {meta.get('industry', 'N/A')}
+
+MÉTRICAS DE CALIDAD:
+• Score Global: {meta.get('score', 'N/A')}/100
+• Calidad CV: {meta.get('calidad_cv', 'N/A')}
+• Habilidades técnicas: {meta.get('skills_count', 'N/A')} detectadas
+• Soft skills: {meta.get('soft_skills_count', 'N/A')} detectadas
+• Idiomas: {meta.get('languages_count', 'N/A')} detectados
+
+CONTENIDO RELEVANTE:
+{doc[:500]}{'...' if len(doc) > 500 else ''}
+═══════════════════════════════════════════════════════════════════════
 """)
 
         context = "\n".join(context_parts)
@@ -447,11 +506,49 @@ CV #{i} (Relevancia: {similarity}):
 Eres un reclutador senior experto con más de 15 años de experiencia en selección de personal tecnológico y empresarial. 
 Tienes acceso a un sistema avanzado de análisis de CVs con embeddings semánticos que te proporciona los candidatos más relevantes.
 
-CONTEXTO - CVs más relevantes (ordenados por relevancia semántica):
+CONTEXTO - CANDIDATOS MÁS RELEVANTES (ordenados por relevancia semántica):
 {context}
 
 CONSULTA DEL RECLUTADOR:
 {question}
+
+INSTRUCCIONES ESPECÍFICAS PARA TU ANÁLISIS:
+
+🎯 ANÁLISIS DE RELEVANCIA:
+- Los valores de relevancia semántica (0-1) indican qué tan bien coincide cada CV con la consulta
+- Valores >0.8 = Match excelente | 0.6-0.8 = Buen match | 0.4-0.6 = Match regular | <0.4 = Match bajo
+- Prioriza candidatos con alta relevancia semántica Y score global alto
+
+🧠 EVALUACIÓN INTEGRAL:
+- Analiza no solo habilidades técnicas, sino también soft skills y calidad del CV
+- Considera seniority vs experiencia (pueden no coincidir siempre)
+- Evalúa la coherencia entre rol, industria y habilidades
+
+💡 INSIGHTS AVANZADOS:
+- Identifica patrones interesantes entre los candidatos
+- Detecta fortalezas únicas o combinaciones raras de skills
+- Sugiere candidatos "diamantes en bruto" (alta relevancia, score menor)
+
+⚠️ GAPS Y LIMITACIONES:
+- Si ningún candidato es perfecto, explica específicamente qué falta
+- Sugiere búsquedas alternativas o filtros adicionales
+- Recomienda si ampliar criterios o ser más específicos
+
+FORMATO DE RESPUESTA ESTRUCTURADA:
+
+🔥 RESUMEN EJECUTIVO (2-3 líneas clave)
+
+⭐ TOP CANDIDATOS RECOMENDADOS:
+[Para cada candidato menciona ID, nombre, por qué es ideal, fortalezas clave]
+
+📊 ANÁLISIS COMPARATIVO:
+[Patrones, tendencias, diferenciadores entre candidatos]
+
+⚠️ GAPS IDENTIFICADOS:
+[Qué no encuentras en los resultados actuales]
+
+🎯 RECOMENDACIONES ESTRATÉGICAS:
+[Próximos pasos, filtros adicionales, búsquedas complementarias]
 
 INSTRUCCIONES ESPECÍFICAS:
 - Analiza la relevancia semántica de cada CV (valores más altos = mejor match)
@@ -463,23 +560,18 @@ INSTRUCCIONES ESPECÍFICAS:
 - Si ningún CV es perfecto, sugiere el mejor match disponible y qué buscar adicionalmente
 - Sé conciso pero detallado, máximo 500 palabras
 
-FORMATO DE RESPUESTA:
-1. Resumen ejecutivo (2-3 líneas)
-2. Candidatos recomendados (con IDs)
-3. Análisis de gaps si los hay
-4. Recomendaciones adicionales
-
-RESPUESTA:
+RESPUESTA (máximo 600 palabras, directo y actionable):
         """
 
-        # Enviar a LLM con modelo optimizado para análisis
+        # Enviar a Ollama con configuración optimizada
         response = ollama_client.chat(
-            model='llama2',  # Puedes usar 'mixtral' o 'codellama' si están disponibles
+            model='llama2',  # Puedes usar 'mixtral', 'codellama', etc.
             messages=[{"role": "user", "content": prompt}],
             options={
-                "temperature": 0.3,  # Más determinístico para análisis profesional
+                "temperature": 0.2,  # Más determinístico para análisis profesional
                 "top_p": 0.9,
-                "top_k": 40
+                "top_k": 40,
+                "num_ctx": 4096  # Contexto amplio para análisis complejo
             }
         )
 
@@ -488,47 +580,84 @@ RESPUESTA:
     except Exception as e:
         return f"Error al procesar consulta con LLM: {str(e)}"
 
-@app.get("/ask")
-@app.get("/ask")
-def ask_llm(
-    query: str,
-    industry_filter: Optional[str] = None,
+# ========== ENDPOINTS ADICIONALES ==========
+
+@app.get("/cvs")
+def list_cvs_enhanced(
+    skip: int = 0,
+    limit: int = 20,
     min_score: Optional[float] = None,
-    role_filter: Optional[str] = None
+    industry: Optional[str] = None,
+    role: Optional[str] = None,
+    seniority: Optional[str] = None,
+    db: Session = Depends(get_db)
 ):
     """
-    Realiza consulta inteligente sobre CVs usando LLM
+    Lista CVs con filtros opcionales mejorados
     """
-    try:
-        # Construir filtros opcionales
-        context_filter = {}
-        if industry_filter:
-            context_filter["industry"] = industry_filter
-        if min_score is not None:
-            context_filter["score"] = {"$gte": min_score}
-        if role_filter:
-            context_filter["role"] = role_filter
-        
-        answer = query_with_llm(query, context_filter if context_filter else None)
-        
-        return {
-            "query": query,
-            "filters_applied": {
-                "industry": industry_filter,
-                "min_score": min_score,
-                "role": role_filter
-            },
-            "answer": answer
+    query = db.query(CV)
+    
+    if min_score is not None:
+        query = query.filter(CV.overall_score >= min_score)
+    
+    if industry:
+        query = query.join(CV.industria).filter(CV.industria.has(nombre=industry))
+    
+    if role:
+        query = query.join(CV.rol).filter(CV.rol.has(nombre=role))
+    
+    cvs = query.offset(skip).limit(limit).all()
+    
+    # Enriquecer con datos de ChromaDB si están disponibles
+    enriched_cvs = []
+    for cv in cvs:
+        cv_data = {
+            "id": cv.id,
+            "filename": cv.filename,
+            "nombre": cv.nombre_completo,
+            "score": cv.overall_score,
+            "industria": cv.industria.nombre if cv.industria else None,
+            "rol": cv.rol.nombre if cv.rol else None,
+            "experiencia": cv.anhos_experiencia,
+            "email": cv.email,
+            "created_at": cv.created_at if hasattr(cv, 'created_at') else None
         }
         
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error procesando consulta: {str(e)}")
+        # Intentar obtener datos enriquecidos de ChromaDB
+        try:
+            results = collection.get(ids=[str(cv.id)], include=["metadatas"])
+            if results["ids"]:
+                metadata = results["metadatas"][0]
+                cv_data.update({
+                    "seniority": metadata.get("seniority"),
+                    "calidad_cv": metadata.get("calidad_cv"),
+                    "skills_count": metadata.get("skills_count"),
+                    "soft_skills_count": metadata.get("soft_skills_count"),
+                    "languages_count": metadata.get("languages_count")
+                })
+        except:
+            pass  # Continuar con datos básicos
+        
+        enriched_cvs.append(cv_data)
     
+    return {
+        "cvs": enriched_cvs,
+        "total": query.count(),
+        "filters_applied": {
+            "min_score": min_score,
+            "industry": industry,
+            "role": role,
+            "seniority": seniority
+        }
+    }
 
 @app.post("/regenerate-embeddings")
-def regenerate_all_embeddings(db: Session = Depends(get_db)):
+def regenerate_all_embeddings_enhanced(
+    db: Session = Depends(get_db),
+    ollama_processor: OllamaCVProcessor = Depends(get_ollama_processor)
+):
     """
-    Regenera embeddings para todos los CVs existentes
+    Regenera embeddings mejorados para todos los CVs existentes usando Ollama
     """
     try:
         cvs = db.query(CV).all()
@@ -537,40 +666,61 @@ def regenerate_all_embeddings(db: Session = Depends(get_db)):
         
         for cv in cvs:
             try:
-                # Preparar datos para embedding
-                cv_embedding_data = {
-                    "nombre": cv.nombre_completo,
-                    "rol": cv.rol.nombre if cv.rol else None,
-                    "industria": cv.industria.nombre if cv.industria else None,
-                    "experiencia": cv.anhos_experiencia,
-                    "seniority": "N/A",  # No podemos recalcular sin el texto original
-                    "habilidades": [h.nombre for h in cv.habilidades],
-                    "idiomas": [l.nombre for l in cv.lenguajes],
-                    "contenido_original": cv.contenido if hasattr(cv, 'contenido') else ""
-                }
+                print(f"[INFO] Regenerando embedding para CV {cv.id}: {cv.filename}")
                 
-                embedding_text = create_cv_embedding_text(cv_embedding_data)
-                embedding = generate_embedding(embedding_text)
-                
-                if embedding:
-                    # Actualizar en ChromaDB
+                # Si tenemos contenido original, reprocesar con Ollama
+                contenido_original = getattr(cv, 'contenido', None)
+                if contenido_original:
+                    analysis = ollama_processor.process_cv_with_ollama(contenido_original)
+                    embedding_text = create_cv_embedding_text_enhanced(analysis)
+                    
                     metadata = {
                         "cv_id": cv.id,
-                        "role": cv.rol.nombre if cv.rol else "No especificado",
+                        "nombre": analysis.nombre,
+                        "filename": cv.filename,
+                        "role": analysis.rol_sugerido,
+                        "seniority": analysis.seniority,
+                        "experience": f"{analysis.anos_experiencia} años",
+                        "industry": analysis.sector,
+                        "score": analysis.overall_score,
+                        "skills_count": len(analysis.habilidades_tecnicas),
+                        "soft_skills_count": len(analysis.soft_skills),
+                        "languages_count": len(analysis.idiomas),
+                        "calidad_cv": analysis.calidad_cv,
+                    }
+                else:
+                    # Fallback a datos existentes
+                    embedding_text = f"""
+Nombre: {cv.nombre_completo or 'N/A'}
+Rol: {cv.rol.nombre if cv.rol else 'N/A'}
+Industria: {cv.industria.nombre if cv.industria else 'N/A'}
+Experiencia: {cv.anhos_experiencia} años
+Habilidades: {', '.join([h.nombre for h in cv.habilidades])}
+Idiomas: {', '.join([l.nombre for l in cv.lenguajes])}
+                    """.strip()
+                    
+                    metadata = {
+                        "cv_id": cv.id,
+                        "nombre": cv.nombre_completo or "N/A",
+                        "filename": cv.filename,
+                        "role": cv.rol.nombre if cv.rol else "N/A",
+                        "seniority": "N/A",
                         "experience": f"{cv.anhos_experiencia} años",
-                        "industry": cv.industria.nombre if cv.industria else "No especificado",
+                        "industry": cv.industria.nombre if cv.industria else "N/A",
                         "score": cv.overall_score,
                         "skills_count": len(cv.habilidades),
                         "languages_count": len(cv.lenguajes),
-                        "filename": cv.filename,
-                        "nombre": cv.nombre_completo or "No especificado"
+                        "calidad_cv": "N/A",
                     }
-                    
+                
+                embedding = generate_embedding(embedding_text)
+                
+                if embedding:
                     # Eliminar el embedding anterior si existe
                     try:
                         collection.delete(ids=[str(cv.id)])
                     except:
-                        pass  # No existe, continuar
+                        pass
                     
                     # Agregar nuevo embedding
                     collection.add(
@@ -581,35 +731,91 @@ def regenerate_all_embeddings(db: Session = Depends(get_db)):
                     )
                     
                     updated_count += 1
+                    print(f"[SUCCESS] CV {cv.id} actualizado exitosamente")
                     
             except Exception as e:
-                errors.append(f"CV {cv.id}: {str(e)}")
+                error_msg = f"CV {cv.id}: {str(e)}"
+                errors.append(error_msg)
+                print(f"[ERROR] {error_msg}")
         
         return {
             "status": "completed",
             "total_cvs": len(cvs),
             "updated_count": updated_count,
-            "errors": errors
+            "errors": errors,
+            "method": "ollama_enhanced"
         }
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error regenerando embeddings: {str(e)}")
-    
-#========== Endpoints de estadisticas ==========
+
 @app.get("/stats")
-def get_stats(db: Session = Depends(get_db)):
-    """Obtiene estadísticas generales del sistema"""
+def get_stats_enhanced(db: Session = Depends(get_db)):
+    """Obtiene estadísticas generales del sistema mejoradas"""
     total_cvs = db.query(CV).count()
     avg_score = db.query(CV).filter(CV.overall_score.isnot(None)).all()
     avg_score_value = sum(cv.overall_score for cv in avg_score) / len(avg_score) if avg_score else 0
     
+    # Estadísticas de ChromaDB
+    try:
+        collection_count = collection.count()
+        
+        # Obtener distribución de seniority desde ChromaDB
+        all_results = collection.get(include=["metadatas"])
+        seniority_stats = {}
+        calidad_stats = {}
+        
+        for metadata in all_results.get("metadatas", []):
+            seniority = metadata.get("seniority", "N/A")
+            calidad = metadata.get("calidad_cv", "N/A")
+            
+            seniority_stats[seniority] = seniority_stats.get(seniority, 0) + 1
+            calidad_stats[calidad] = calidad_stats.get(calidad, 0) + 1
+            
+    except Exception as e:
+        print(f"[WARNING] Error obteniendo stats de ChromaDB: {e}")
+        collection_count = "N/A"
+        seniority_stats = {}
+        calidad_stats = {}
+    
     return {
         "total_cvs": total_cvs,
         "average_score": round(avg_score_value, 2),
-        "collection_count": collection.count() if hasattr(collection, 'count') else "N/A"
+        "collection_count": collection_count,
+        "seniority_distribution": seniority_stats,
+        "calidad_cv_distribution": calidad_stats,
+        "processing_method": "ollama_enhanced"
     }
+
+# ========== NUEVO ENDPOINT PARA TESTING OLLAMA ==========
+@app.post("/test-ollama")
+async def test_ollama_processing(
+    text: str,
+    ollama_processor: OllamaCVProcessor = Depends(get_ollama_processor)
+):
+    """
+    Endpoint para testear el procesamiento de Ollama con texto directo
+    """
+    try:
+        analysis = ollama_processor.process_cv_with_ollama(text)
+        
+        return {
+            "status": "success",
+            "analysis": {
+                "nombre": analysis.nombre,
+                "rol_sugerido": analysis.rol_sugerido,
+                "seniority": analysis.seniority,
+                "anos_experiencia": analysis.anos_experiencia,
+                "overall_score": analysis.overall_score,
+                "habilidades_tecnicas": analysis.habilidades_tecnicas,
+                "soft_skills": analysis.soft_skills,
+                "resumen_profesional": analysis.resumen_profesional,
+                "embedding_text": analysis.embedding_text[:200] + "..." if len(analysis.embedding_text) > 200 else analysis.embedding_text
+            }
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error testing Ollama: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000, reload=True)
-    

@@ -19,6 +19,10 @@ cv_lenguajes = Table(
 
 # ========== MODELOS NORMALIZADOS ==========
 class Industria(Base):
+    """
+    Representa el SECTOR de la empresa donde trabaja/trabajó
+    Ejemplos: Tecnología, Salud, Finanzas, Educación, etc.
+    """
     __tablename__ = "industrias"
     id = Column(Integer, primary_key=True, index=True)
     nombre = Column(String(100), unique=True, index=True, nullable=False)
@@ -27,23 +31,38 @@ class Industria(Base):
 
 
 class Rol(Base):
+    """
+    Representa el CARGO/POSICIÓN específica
+    Ejemplos: Pasante, Desarrollador Backend, Analista, Gerente, etc.
+    UN ROL PUEDE EXISTIR EN MÚLTIPLES INDUSTRIAS
+    """
     __tablename__ = "roles"
     id = Column(Integer, primary_key=True, index=True)
-    nombre = Column(String(100), index=True, nullable=False)
-    id_industria = Column(Integer, ForeignKey('industrias.id'), nullable=False)
+    nombre = Column(String(100), unique=True, index=True, nullable=False)  # Hacer único
+    descripcion = Column(Text, nullable=True)
+    # QUITAR la relación directa con industria - un rol puede estar en cualquier industria
     created_at = Column(DateTime, default=datetime.utcnow)
-    
-    # Relationships
-    industria = relationship("Industria", backref="roles")
+
+    def __repr__(self):
+        return f"<Rol(id={self.id}, nombre='{self.nombre}')>"
+
+
 
 
 class Puesto(Base):
+    """
+    Representa el NIVEL de seniority
+    Ejemplos: Junior, Semi-Senior, Senior, Lead, etc.
+    """
     __tablename__ = "puestos"
     id = Column(Integer, primary_key=True, index=True)
     nombre = Column(String(100), unique=True, nullable=False)
     min_anhos = Column(Integer, nullable=False, default=0)
     max_anhos = Column(Integer, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f"<Puesto(id={self.id}, nombre='{self.nombre}', {self.min_anhos}-{self.max_anhos or '+'} años)>"
 
 
 class CategoriaHabilidad(Base):
@@ -59,6 +78,7 @@ class Habilidad(Base):
     id = Column(Integer, primary_key=True, index=True)
     nombre = Column(String(100), index=True, nullable=False)
     id_categoria = Column(Integer, ForeignKey('categorias_habilidades.id'), nullable=False)
+    # Una habilidad puede ser específica de una industria o general
     id_industria = Column(Integer, ForeignKey('industrias.id'), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     
@@ -67,13 +87,13 @@ class Habilidad(Base):
     industria = relationship("Industria", backref="habilidades_especificas")
 
 
+
 class Lenguaje(Base):
     __tablename__ = "lenguajes"
     id = Column(Integer, primary_key=True, index=True)
     nombre = Column(String(50), unique=True, nullable=False)
     iso_code = Column(String(5), unique=True, nullable=False)  # ISO code like 'en', 'es', etc.
     created_at = Column(DateTime, default=datetime.utcnow)
-
 
 class Educacion(Base):
     __tablename__ = "educacion"
@@ -92,11 +112,18 @@ class Educacion(Base):
 
 
 class Experiencia(Base):
+    """
+    Cada experiencia tiene:
+    - empresa: nombre de la empresa
+    - posicion: el ROL que tuvo (ej: "Pasante", "Desarrollador")
+    - industria: el SECTOR de esa empresa (ej: "Tecnología", "Salud")
+    """
     __tablename__ = "experiencias"
     id = Column(Integer, primary_key=True, index=True)
     id_cv = Column(Integer, ForeignKey('cvs.id'), nullable=False)
     empresa = Column(String(200), nullable=False)
-    posicion = Column(String(100), nullable=False)
+    posicion = Column(String(100), nullable=False)  # Esto es el ROL en esa empresa
+    # La industria es específica de esta experiencia/empresa
     id_industria = Column(Integer, ForeignKey('industrias.id'), nullable=True)
     fecha_inicio = Column(Date, nullable=False)
     fecha_fin = Column(Date, nullable=True)
@@ -107,7 +134,6 @@ class Experiencia(Base):
     # Relationships
     industria = relationship("Industria", backref="experiencias")
     cv = relationship("CV", back_populates="experiencias")
-
 
 class Proyecto(Base):
     __tablename__ = "proyectos"
@@ -141,7 +167,14 @@ class Certificacion(Base):
     cv = relationship("CV", back_populates="certificaciones")
 
 
+
 class CV(Base):
+    """
+    El CV tiene:
+    - id_rol: El ROL PRINCIPAL que busca/tiene (ej: "Desarrollador Backend")
+    - id_puesto: Su NIVEL de seniority (ej: "Junior", "Senior") 
+    - id_industria: La INDUSTRIA donde tiene más experiencia o busca trabajar
+    """
     __tablename__ = "cvs"
     id = Column(Integer, primary_key=True, index=True)
     filename = Column(String(255), index=True, nullable=False)
@@ -156,10 +189,10 @@ class CV(Base):
     portafolio_url = Column(String(500), nullable=True)
     github_url = Column(String(500), nullable=True)
 
-    # Clasificación
-    id_rol = Column(Integer, ForeignKey('roles.id'), nullable=True)
-    id_puesto = Column(Integer, ForeignKey('puestos.id'), nullable=True)
-    id_industria = Column(Integer, ForeignKey('industrias.id'), nullable=True)
+    # Clasificación PRINCIPAL del candidato
+    id_rol = Column(Integer, ForeignKey('roles.id'), nullable=True)           # ROL que busca/tiene
+    id_puesto = Column(Integer, ForeignKey('puestos.id'), nullable=True)      # SENIORITY 
+    id_industria = Column(Integer, ForeignKey('industrias.id'), nullable=True) # INDUSTRIA objetivo
 
     # Métricas
     overall_score = Column(Float, default=0.0)
@@ -180,4 +213,5 @@ class CV(Base):
     experiencias = relationship("Experiencia", back_populates="cv", cascade="all, delete-orphan")
     proyectos = relationship("Proyecto", back_populates="cv", cascade="all, delete-orphan")
     certificaciones = relationship("Certificacion", back_populates="cv", cascade="all, delete-orphan")
+
 
