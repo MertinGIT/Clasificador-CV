@@ -6,6 +6,7 @@ import Sidebar from "./componentes/Sidebar";
 import Navbar from "./componentes/Navbar";
 import ChatCv from "./componentes/ChatCv";
 import UploadDoc from "./componentes/UploadDoc";
+import CandidateDetail from "./componentes/CandidateDetail";
 import "./index.css";
 import "./App.css";
 
@@ -30,6 +31,7 @@ function App() {
         <Route path="/ChatCv" element={<ChatCv />} />
         <Route path="/Navbar" element={<Navbar />} />
         <Route path="/UploadDoc" element={<UploadDoc />} />
+        <Route path="/CandidateDetail" element={<CandidateDetail />} />
       </Routes>
     </BrowserRouter>
   );
