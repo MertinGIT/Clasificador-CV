@@ -17,7 +17,8 @@ from typing import Dict, List, Optional
 import unidecode
 
 # Importar el nuevo procesador con Ollama
-from ollama_cv_processor import OllamaCVProcessor, CVAnalysis, create_cv_embedding_text_enhanced
+from ollama_cv_processor import OllamaCVProcessor, create_cv_embedding_text_enhanced
+
 
 load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -49,9 +50,9 @@ def get_db():
 def get_classifier(db: Session = Depends(get_db)):
     return UniversalCVClassifier(db)
 
-def get_ollama_processor():
+def get_ollama_processor(db: Session = Depends(get_db)):
     """Retorna el procesador de CVs con Ollama"""
-    return OllamaCVProcessor(ollama_client, model="llama2")  # Puedes cambiar el modelo
+    return OllamaCVProcessor(ollama_client, model="llama2", db_session=db)
 
 # Funciones embedding (actualizadas)
 def generate_embedding(text: str, model: str = "nomic-embed-text"):
@@ -92,153 +93,149 @@ def extract_text_from_pdf(file) -> str:
         raise HTTPException(status_code=400, detail=f"Error al procesar PDF: {str(e)}") 
 
 # ========== ENDPOINT PRINCIPAL de subida ==========
-@app.post("/upload")
-async def upload_cv_with_ollama_corrected(
-    file: UploadFile = File(...),
-    classifier: UniversalCVClassifier = Depends(get_classifier),
-    ollama_processor: OllamaCVProcessor = Depends(get_ollama_processor)
-):
-    """
-    Sube y procesa un CV PDF usando Ollama con lógica corregida
-    """
-    if not file.filename.endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Solo se permiten archivos PDF")
+    @app.post("/upload")
+    async def upload_cv_with_ollama(
+        file: UploadFile = File(...),
+        ollama_processor: OllamaCVProcessor = Depends(get_ollama_processor)
+    ):
+        """
+        Sube y procesa un CV PDF usando Ollama
+        """
+        if not file.filename.endswith(".pdf"):
+            raise HTTPException(status_code=400, detail="Solo se permiten archivos PDF")
 
-    temp_file = f"temp_{uuid.uuid4()}.pdf"
-    try:
-        print(f"[INFO] Procesando archivo: {file.filename}")
-        
-        # Guardar archivo temporalmente
-        with open(temp_file, "wb") as f:
-            content = await file.read()
-            f.write(content)
-
-        # Extraer texto del PDF
-        text_content = extract_text_from_pdf(temp_file)
-        
-        if not text_content.strip():
-            raise HTTPException(status_code=400, detail="No se pudo extraer texto del PDF")
-
-        print(f"[INFO] Iniciando análisis con Ollama...")
-        
-        # ===== Procesar con Ollama =====
-        analysis = ollama_processor.process_cv_with_ollama(text_content)
-        
-        print(f"[SUCCESS] Análisis de Ollama completado:")
-        print(f"  - Candidato: {analysis.nombre}")
-        print(f"  - Rol sugerido: {analysis.rol_sugerido}")
-        print(f"  - Seniority: {analysis.seniority}")
-        print(f"  - Sector: {analysis.sector}")
-        print(f"  - Score: {analysis.overall_score}")
-        
-        # ===== Guardar usando la nueva lógica =====
+        temp_file = f"temp_{uuid.uuid4()}.pdf"
         try:
-            # Usar el método corregido
-            cv = classifier.save_cv_from_analysis_corrected(analysis, file.filename)
-            processing_method = "ollama_corrected_logic"
+            print(f"[INFO] Procesando archivo: {file.filename}")
+            
+            # Guardar archivo temporalmente
+            with open(temp_file, "wb") as f:
+                content = await file.read()
+                f.write(content)
+
+            # Extraer texto del PDF
+            text_content = extract_text_from_pdf(temp_file)
+            
+            if not text_content.strip():
+                raise HTTPException(status_code=400, detail="No se pudo extraer texto del PDF")
+
+            print(f"[INFO] Iniciando análisis con Ollama...")
+            
+            # ===== Procesar con Ollama =====
+            analysis = ollama_processor.process_cv_with_ollama(text_content)
+            
+            print(f"[SUCCESS] Análisis de Ollama completado:")
+            print(f"  - Candidato: {analysis.nombre}")
+            print(f"  - Rol sugerido: {analysis.rol_sugerido}")
+            print(f"  - Seniority: {analysis.seniority}")
+            print(f"  - Sector: {analysis.sector}")
+            print(f"  - Score: {analysis.overall_score}")
+            
+            # ===== Guardar en base de datos =====
+            try:
+                cv = ollama_processor.save_cv_from_analysis_corrected(analysis, file.filename)
+                processing_method = "ollama_enhanced"
+                
+            except Exception as e:
+                print(f"[ERROR] Error guardando CV: {e}")
+                raise HTTPException(status_code=500, detail=f"Error guardando CV: {str(e)}")
+            
+            # ===== CREAR EMBEDDING MEJORADO =====
+            embedding_text = create_cv_embedding_text_enhanced(analysis)
+            
+            # Crear metadata enriquecida para ChromaDB
+            metadata = {
+                "cv_id": cv.id,
+                "nombre": analysis.nombre,
+                "filename": file.filename,
+                "role": analysis.rol_sugerido,
+                "seniority": analysis.seniority,
+                "experience": f"{analysis.anos_experiencia} años",
+                "industry": analysis.sector,
+                "score": analysis.overall_score,
+                "skills_count": len(analysis.habilidades_tecnicas),
+                "languages_count": len(analysis.idiomas),
+                "soft_skills_count": len(analysis.soft_skills),
+                "calidad_cv": analysis.calidad_cv,
+                "processing_method": processing_method
+            }
+            
+            print(f"[INFO] Generando embedding...")
+            embedding = generate_embedding(embedding_text)
+            
+            if embedding:
+                collection.add(
+                    documents=[embedding_text], 
+                    embeddings=[embedding],      
+                    metadatas=[metadata],
+                    ids=[str(cv.id)]
+                )
+                print(f"[SUCCESS] Embedding guardado en ChromaDB")
+            
+            # ===== RESPUESTA ENRIQUECIDA =====
+            response_data = {
+                "status": "success",
+                "cv_id": cv.id,
+                "filename": file.filename,
+                "processing_method": processing_method,
+                
+                # Análisis de Ollama
+                "ollama_analysis": {
+                    "nombre": analysis.nombre,
+                    "email": analysis.email,
+                    "telefono": analysis.telefono,
+                    "linkedin": analysis.linkedin,
+                    
+                    "perfil_profesional": {
+                        "rol_sugerido": analysis.rol_sugerido,
+                        "seniority": analysis.seniority,
+                        "sector": analysis.sector,
+                        "anos_experiencia": analysis.anos_experiencia,
+                        "resumen_profesional": analysis.resumen_profesional
+                    },
+                    
+                    "competencias": {
+                        "habilidades_tecnicas": analysis.habilidades_tecnicas,
+                        "soft_skills": analysis.soft_skills,
+                        "idiomas": analysis.idiomas
+                    },
+                    
+                    "evaluacion": {
+                        "overall_score": analysis.overall_score,
+                        "calidad_cv": analysis.calidad_cv,
+                        "fortalezas": analysis.fortalezas,
+                        "areas_mejora": analysis.areas_mejora
+                    }
+                },
+                
+                # Clasificación final en BD
+                "clasificacion_bd": {
+                    "rol": {
+                        "nombre": cv.rol.nombre if cv.rol else None,
+                        "descripcion": cv.rol.descripcion if cv.rol else None
+                    },
+                    "seniority": {
+                        "nombre": cv.puesto.nombre if cv.puesto else None,
+                        "rango_años": f"{cv.puesto.min_anhos}-{cv.puesto.max_anhos or '+'}" if cv.puesto else None
+                    },
+                    "industria_principal": {
+                        "nombre": cv.industria.nombre if cv.industria else None,
+                        "descripcion": cv.industria.descripcion if cv.industria else None
+                    },
+                    "score_final": cv.overall_score,
+                    "años_experiencia": cv.anhos_experiencia
+                }
+            }
+            
+            return response_data
             
         except Exception as e:
-            # Fallback al método anterior si falla
-            print(f"[WARNING] Error con nueva lógica, usando método clásico: {e}")
-            cv = classifier.save_cv(text_content, file.filename)
-            processing_method = "classic_fallback"
-        
-        # ===== CREAR EMBEDDING MEJORADO =====
-        embedding_text = create_cv_embedding_text_enhanced(analysis)
-        
-        # Crear metadata enriquecida para ChromaDB
-        metadata = {
-            "cv_id": cv.id,
-            "nombre": analysis.nombre,
-            "filename": file.filename,
-            "role": analysis.rol_sugerido,
-            "seniority": analysis.seniority,
-            "experience": f"{analysis.anos_experiencia} años",
-            "industry": analysis.sector,
-            "score": analysis.overall_score,
-            "skills_count": len(analysis.habilidades_tecnicas),
-            "languages_count": len(analysis.idiomas),
-            "soft_skills_count": len(analysis.soft_skills),
-            "calidad_cv": analysis.calidad_cv,
-            "processing_method": processing_method
-        }
-        
-        print(f"[INFO] Generando embedding...")
-        embedding = generate_embedding(embedding_text)
-        
-        if embedding:
-            collection.add(
-                documents=[embedding_text], 
-                embeddings=[embedding],      
-                metadatas=[metadata],
-                ids=[str(cv.id)]
-            )
-            print(f"[SUCCESS] Embedding guardado en ChromaDB")
-        
-        # ===== RESPUESTA ENRIQUECIDA CON NUEVA LÓGICA =====
-        response_data = {
-            "status": "success",
-            "cv_id": cv.id,
-            "filename": file.filename,
-            "processing_method": processing_method,
-            
-            # Análisis de Ollama
-            "ollama_analysis": {
-                "nombre": analysis.nombre,
-                "email": analysis.email,
-                "telefono": analysis.telefono,
-                "linkedin": analysis.linkedin,
-                
-                "perfil_profesional": {
-                    "rol_sugerido": analysis.rol_sugerido,
-                    "seniority": analysis.seniority,
-                    "sector": analysis.sector,
-                    "anos_experiencia": analysis.anos_experiencia,
-                    "resumen_profesional": analysis.resumen_profesional
-                },
-                
-                "competencias": {
-                    "habilidades_tecnicas": analysis.habilidades_tecnicas,
-                    "soft_skills": analysis.soft_skills,
-                    "idiomas": analysis.idiomas
-                },
-                
-                "evaluacion": {
-                    "overall_score": analysis.overall_score,
-                    "calidad_cv": analysis.calidad_cv,
-                    "fortalezas": analysis.fortalezas,
-                    "areas_mejora": analysis.areas_mejora
-                }
-            },
-            
-            # Clasificación final en BD (nueva lógica)
-            "clasificacion_bd": {
-                "rol": {
-                    "nombre": cv.rol.nombre if cv.rol else None,
-                    "descripcion": cv.rol.descripcion if cv.rol else None
-                },
-                "seniority": {
-                    "nombre": cv.puesto.nombre if cv.puesto else None,
-                    "rango_años": f"{cv.puesto.min_anhos}-{cv.puesto.max_anhos or '+'}" if cv.puesto else None
-                },
-                "industria_principal": {
-                    "nombre": cv.industria.nombre if cv.industria else None,
-                    "descripcion": cv.industria.descripcion if cv.industria else None
-                },
-                "score_final": cv.overall_score,
-                "años_experiencia": cv.anhos_experiencia
-            }
-        }
-        
-        return response_data
-        
-    except Exception as e:
-        print(f"[ERROR] Error procesando CV: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error procesando CV: {str(e)}")
-    finally:
-        # Limpiar archivo temporal
-        if os.path.exists(temp_file):
-            os.remove(temp_file)
+            print(f"[ERROR] Error procesando CV: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Error procesando CV: {str(e)}")
+        finally:
+            # Limpiar archivo temporal
+            if os.path.exists(temp_file):
+                os.remove(temp_file)
 
 # ========== ENDPOINT DE ANÁLISIS DETALLADO ==========
 @app.get("/cv/{cv_id}/analisis-completo")

@@ -746,3 +746,471 @@ class UniversalCVClassifier:
         except Exception as e:
             print(f"[ERROR] Error obteniendo análisis de CV {cv_id}: {str(e)}")
             return None
+    def save_cv_from_analysis_corrected(self, analysis, filename: str):
+        """
+        Guarda CV desde análisis de Ollama con lógica corregida:
+        - Industria: Sector de las empresas (Tecnología, Salud, etc.)
+        - Rol: Cargo específico (Pasante, Desarrollador Backend, etc.)
+        - Puesto: Nivel seniority (Junior, Senior, etc.)
+        """
+        try:
+            print(f"[INFO] Guardando CV con lógica corregida: {analysis.nombre}")
+            
+            # 1. INDUSTRIA: Determinar el sector principal
+            industria = self.determine_main_industry(analysis)
+            
+            # 2. ROL: Obtener o crear el rol específico
+            rol = self.get_or_create_role(analysis.rol_sugerido)
+            
+            # 3. PUESTO: Determinar el nivel de seniority
+            puesto = self.get_or_create_seniority_level(analysis.seniority, analysis.anos_experiencia)
+            
+            # 4. Crear CV principal
+            cv = CV(
+                filename=filename,
+                contenido=analysis.embedding_text or "Contenido procesado con Ollama",
+                
+                # Información personal
+                nombre_completo=analysis.nombre if analysis.nombre != "N/A" else None,
+                email=analysis.email if analysis.email and analysis.email != "N/A" else None,
+                telefono=analysis.telefono if analysis.telefono and analysis.telefono not in ["N/A", "No disponible"] else None,
+                ubicacion=None,
+                linkedin_url=analysis.linkedin if analysis.linkedin and analysis.linkedin != "N/A" else None,
+                github_url=analysis.github if analysis.github and analysis.github != "N/A" else None,
+                portafolio_url=analysis.portafolio if analysis.portafolio and analysis.portafolio != "N/A" else None,
+                
+                # Clasificación PRINCIPAL del candidato
+                id_rol=rol.id if rol else None,                    # ROL que busca/tiene
+                id_puesto=puesto.id if puesto else None,           # SENIORITY 
+                id_industria=industria.id if industria else None,  # INDUSTRIA objetivo/principal
+                
+                # Métricas
+                overall_score=analysis.overall_score,
+                anhos_experiencia=analysis.anos_experiencia,
+                processed_status="completed"
+            )
+            
+            self.session.add(cv)
+            self.session.flush()  # Para obtener el ID del CV
+            
+            # 5. EXPERIENCIAS: Cada una con su industria específica
+            for exp in analysis.experiencias:
+                if isinstance(exp, dict):
+                    # Determinar industria específica de esta empresa
+                    exp_industria = self.determine_company_industry(exp.get('empresa', ''), exp.get('descripcion', ''))
+                    
+                    experiencia = Experiencia(
+                        id_cv=cv.id,
+                        empresa=exp.get('empresa', 'N/A'),
+                        posicion=exp.get('puesto', 'N/A'),  # El ROL en esa empresa específica
+                        descripcion=exp.get('descripcion', None),
+                        id_industria=exp_industria.id if exp_industria else industria.id,  # Industria específica o principal
+                        es_actual=exp.get('actual', False)
+                    )
+                    self.session.add(experiencia)
+            
+            # 6. Procesar habilidades técnicas
+            for habilidad_nombre in analysis.habilidades_tecnicas:
+                if habilidad_nombre.lower() not in ['n/a', '']:
+                    habilidad = self.get_or_create_skill(habilidad_nombre, industria)
+                    if habilidad and habilidad not in cv.habilidades:
+                        cv.habilidades.append(habilidad)
+            
+            # 7. Procesar idiomas
+            for idioma_info in analysis.idiomas:
+                if isinstance(idioma_info, dict) and 'idioma' in idioma_info:
+                    idioma_nombre = idioma_info['idioma']
+                else:
+                    idioma_nombre = str(idioma_info)
+                    
+                if idioma_nombre.lower() not in ['n/a', 'español', 'spanish']:
+                    idioma = self.get_or_create_language(idioma_nombre)
+                    if idioma and idioma not in cv.lenguajes:
+                        cv.lenguajes.append(idioma)
+            
+            # 8. Procesar educación
+            for edu in analysis.educacion:
+                if isinstance(edu, dict):
+                    educacion = Educacion(
+                        id_cv=cv.id,
+                        grado=edu.get('titulo', 'N/A'),
+                        institucion=edu.get('institucion', 'N/A'),
+                        campo_estudio=edu.get('campo', None),
+                        esta_cursando=edu.get('en_curso', False)
+                    )
+                    self.session.add(educacion)
+            
+            # 9. Procesar proyectos
+            for proyecto in analysis.proyectos_destacados:
+                if isinstance(proyecto, dict):
+                    proyecto_obj = Proyecto(
+                        id_cv=cv.id,
+                        nombre=proyecto.get('nombre', 'Proyecto'),
+                        descripcion=proyecto.get('descripcion', ''),
+                        tecnologias_usadas=', '.join(proyecto.get('tecnologias', []))
+                    )
+                    self.session.add(proyecto_obj)
+            
+            # 10. Confirmar cambios
+            self.session.commit()
+            
+            print(f"[SUCCESS] CV guardado con nueva lógica:")
+            print(f"  - ID: {cv.id}")
+            print(f"  - Nombre: {cv.nombre_completo}")
+            print(f"  - Rol: {rol.nombre if rol else 'N/A'}")
+            print(f"  - Seniority: {puesto.nombre if puesto else 'N/A'}")
+            print(f"  - Industria principal: {industria.nombre if industria else 'N/A'}")
+            print(f"  - Score: {cv.overall_score}")
+            
+            return cv
+            
+        except Exception as e:
+            self.session.rollback()
+            print(f"[ERROR] Error guardando CV: {e}")
+            raise Exception(f"Error guardando CV: {e}")
+
+    def determine_main_industry(self, analysis):
+        """
+        Determina la industria principal basada en el sector mencionado y experiencias
+        """
+        # Mapeo de términos a industrias
+        industry_mapping = {
+            'tecnología': 'Tecnología',
+            'software': 'Tecnología', 
+            'informática': 'Tecnología',
+            'it': 'Tecnología',
+            'desarrollo': 'Tecnología',
+            'salud': 'Salud',
+            'medicina': 'Salud',
+            'hospital': 'Salud',
+            'finanzas': 'Finanzas',
+            'banco': 'Finanzas',
+            'financiero': 'Finanzas',
+            'educación': 'Educación',
+            'universidad': 'Educación',
+            'enseñanza': 'Educación',
+            'manufactura': 'Manufactura',
+            'producción': 'Manufactura',
+            'fábrica': 'Manufactura',
+            'consultoría': 'Servicios',
+            'servicios': 'Servicios',
+            'retail': 'Retail',
+            'ventas': 'Retail',
+            'comercio': 'Retail'
+        }
+        
+        # Primero intentar con el sector del análisis
+        if analysis.sector and analysis.sector.lower() not in ['n/a', 'general', '']:
+            sector_lower = analysis.sector.lower()
+            for key, industry in industry_mapping.items():
+                if key in sector_lower:
+                    return self.get_or_create_industry(industry)
+        
+        # Si no, analizar las experiencias para inferir industria
+        industry_votes = {}
+        for exp in analysis.experiencias:
+            if isinstance(exp, dict):
+                empresa = exp.get('empresa', '').lower()
+                descripcion = exp.get('descripcion', '').lower()
+                texto_completo = f"{empresa} {descripcion}"
+                
+                for key, industry in industry_mapping.items():
+                    if key in texto_completo:
+                        industry_votes[industry] = industry_votes.get(industry, 0) + 1
+        
+        # Usar la industria con más votos
+        if industry_votes:
+            main_industry = max(industry_votes, key=industry_votes.get)
+            return self.get_or_create_industry(main_industry)
+        
+        # Por defecto, usar "General"
+        return self.get_or_create_industry("General")
+
+    def determine_company_industry(self, empresa_nombre, descripcion=""):
+        """
+        Determina la industria específica de una empresa
+        """
+        texto = f"{empresa_nombre} {descripcion}".lower()
+        
+        # Empresas específicas conocidas
+        known_companies = {
+            'google': 'Tecnología',
+            'microsoft': 'Tecnología',
+            'amazon': 'Tecnología',
+            'meta': 'Tecnología',
+            'facebook': 'Tecnología',
+            'netflix': 'Tecnología',
+            'uber': 'Tecnología',
+            'airbnb': 'Tecnología',
+            'merit': 'Tecnología',  # Del ejemplo del CV
+            'hospital': 'Salud',
+            'clínica': 'Salud',
+            'banco': 'Finanzas',
+            'universidad': 'Educación'
+        }
+        
+        for company, industry in known_companies.items():
+            if company in texto:
+                return self.get_or_create_industry(industry)
+        
+        # Palabras clave por industria
+        industry_keywords = {
+            'Tecnología': ['software', 'desarrollo', 'programación', 'sistemas', 'it', 'tech', 'digital'],
+            'Salud': ['salud', 'médico', 'hospital', 'clínica', 'farmacia', 'medicina'],
+            'Finanzas': ['banco', 'financiero', 'seguros', 'inversión', 'crédito', 'fintech'],
+            'Educación': ['educación', 'universidad', 'colegio', 'instituto', 'enseñanza', 'académico'],
+            'Manufactura': ['manufactura', 'fábrica', 'producción', 'industrial', 'planta'],
+            'Retail': ['retail', 'ventas', 'comercio', 'tienda', 'supermercado'],
+            'Servicios': ['consultoría', 'servicios', 'asesoría', 'consultores']
+        }
+        
+        for industry, keywords in industry_keywords.items():
+            for keyword in keywords:
+                if keyword in texto:
+                    return self.get_or_create_industry(industry)
+        
+        # Si no se puede determinar, retornar None para usar la industria principal
+        return None
+
+    def get_or_create_industry(self, nombre: str):
+        """Obtener o crear industria"""
+        industria = self.session.query(Industria).filter(
+            Industria.nombre.ilike(f"%{nombre}%")
+        ).first()
+        
+        if not industria:
+            industria = Industria(
+                nombre=nombre.title(),
+                descripcion=f"Industria de {nombre.lower()}"
+            )
+            self.session.add(industria)
+            self.session.flush()
+            
+        return industria
+
+    def get_or_create_role(self, rol_nombre: str):
+        """Obtener o crear rol (independiente de industria)"""
+        if not rol_nombre or rol_nombre.lower() in ['n/a', '']:
+            return None
+            
+        rol = self.session.query(Rol).filter(
+            Rol.nombre.ilike(f"%{rol_nombre}%")
+        ).first()
+        
+        if not rol:
+            # Mapeo de roles comunes
+            role_mapping = {
+                'pasante': 'Pasante',
+                'intern': 'Pasante',
+                'desarrollador backend': 'Desarrollador Backend',
+                'backend developer': 'Desarrollador Backend',
+                'desarrollador frontend': 'Desarrollador Frontend',
+                'frontend developer': 'Desarrollador Frontend',
+                'full stack': 'Desarrollador Full Stack',
+                'fullstack': 'Desarrollador Full Stack',
+                'analista': 'Analista de Sistemas',
+                'qa': 'QA Tester',
+                'tester': 'QA Tester',
+                'devops': 'DevOps Engineer',
+                'data analyst': 'Data Analyst',
+                'project manager': 'Project Manager',
+                'product manager': 'Product Manager',
+                'designer': 'Designer',
+                'consultor': 'Consultor',
+                'gerente': 'Gerente'
+            }
+            
+            # Buscar mapeo
+            rol_normalizado = role_mapping.get(rol_nombre.lower(), rol_nombre.title())
+            
+            rol = Rol(
+                nombre=rol_normalizado,
+                descripcion=f"Rol de {rol_normalizado.lower()}"
+            )
+            self.session.add(rol)
+            self.session.flush()
+            
+        return rol
+
+    def get_or_create_seniority_level(self, seniority: str, anos_experiencia: int = 0):
+        """Obtener o crear nivel de seniority"""
+        if not seniority or seniority.lower() in ['n/a', '']:
+            # Inferir seniority por años de experiencia
+            if anos_experiencia == 0:
+                seniority = "Estudiante"
+            elif anos_experiencia <= 1:
+                seniority = "Trainee"
+            elif anos_experiencia <= 2:
+                seniority = "Junior"
+            elif anos_experiencia <= 4:
+                seniority = "Semi-Senior"
+            elif anos_experiencia <= 8:
+                seniority = "Senior"
+            else:
+                seniority = "Lead"
+        
+        # Mapeo de seniority
+        seniority_mapping = {
+            'estudiante': 'Estudiante',
+            'student': 'Estudiante',
+            'trainee': 'Trainee',
+            'junior': 'Junior',
+            'jr': 'Junior',
+            'semi senior': 'Semi-Senior',
+            'semi-senior': 'Semi-Senior',
+            'middle': 'Semi-Senior',
+            'mid': 'Semi-Senior',
+            'senior': 'Senior',
+            'sr': 'Senior',
+            'lead': 'Lead',
+            'líder': 'Lead',
+            'manager': 'Manager',
+            'gerente': 'Manager',
+            'director': 'Director'
+        }
+        
+        seniority_normalizado = seniority_mapping.get(seniority.lower(), seniority.title())
+        
+        puesto = self.session.query(Puesto).filter(
+            Puesto.nombre.ilike(f"%{seniority_normalizado}%")
+        ).first()
+        
+        if not puesto:
+            # Definir rangos de años por defecto
+            year_ranges = {
+                'Estudiante': (0, 0),
+                'Trainee': (0, 1),
+                'Junior': (0, 2),
+                'Semi-Senior': (2, 4),
+                'Senior': (4, 8),
+                'Lead': (6, 12),
+                'Manager': (8, None),
+                'Director': (10, None)
+            }
+            
+            min_years, max_years = year_ranges.get(seniority_normalizado, (anos_experiencia, None))
+            
+            puesto = Puesto(
+                nombre=seniority_normalizado,
+                min_anhos=min_years,
+                max_anhos=max_years
+            )
+            self.session.add(puesto)
+            self.session.flush()
+            
+        return puesto
+
+    def get_or_create_skill(self, nombre: str, industria=None):
+        """Obtener o crear habilidad"""
+        habilidad = self.session.query(Habilidad).filter(
+            Habilidad.nombre.ilike(f"%{nombre}%")
+        ).first()
+        
+        if not habilidad:
+            # Obtener o crear categoría técnica
+            categoria = self.session.query(CategoriaHabilidad).filter(
+                CategoriaHabilidad.nombre == "Técnica"
+            ).first()
+            
+            if not categoria:
+                categoria = CategoriaHabilidad(
+                    nombre="Técnica",
+                    descripcion="Habilidades técnicas y programación"
+                )
+                self.session.add(categoria)
+                self.session.flush()
+            
+            habilidad = Habilidad(
+                nombre=nombre,
+                id_categoria=categoria.id,
+                id_industria=industria.id if industria else None
+            )
+            self.session.add(habilidad)
+            self.session.flush()
+            
+        return habilidad
+
+    def get_or_create_language(self, nombre: str):
+        """Obtener o crear idioma"""
+        # Mapear nombres a códigos ISO
+        language_mapping = {
+            'español': ('Español', 'es'),
+            'spanish': ('Español', 'es'),
+            'english': ('Inglés', 'en'),
+            'inglés': ('Inglés', 'en'),
+            'portuguese': ('Portugués', 'pt'),
+            'portugués': ('Portugués', 'pt'),
+            'french': ('Francés', 'fr'),
+            'francés': ('Francés', 'fr'),
+            'german': ('Alemán', 'de'),
+            'alemán': ('Alemán', 'de'),
+            'italian': ('Italiano', 'it'),
+            'italiano': ('Italiano', 'it'),
+            'japanese': ('Japonés', 'ja'),
+            'japonés': ('Japonés', 'ja'),
+            'chinese': ('Chino', 'zh'),
+            'chino': ('Chino', 'zh')
+        }
+        
+        nombre_lower = nombre.lower()
+        nombre_normalizado, iso_code = language_mapping.get(nombre_lower, (nombre.title(), nombre.lower()[:2]))
+        
+        idioma = self.session.query(Lenguaje).filter(
+            Lenguaje.nombre.ilike(f"%{nombre_normalizado}%")
+        ).first()
+        
+        if not idioma:
+            idioma = Lenguaje(
+                nombre=nombre_normalizado,
+                iso_code=iso_code
+            )
+            self.session.add(idioma)
+            self.session.flush()
+            
+        return idioma
+
+    # MÉTODO PARA DEBUGGING - Ver cómo se clasificó un CV
+    def debug_cv_classification(self, cv_id: int):
+        """
+        Método de debugging para ver cómo se clasificó un CV
+        """
+        cv = self.session.query(CV).filter(CV.id == cv_id).first()
+        if not cv:
+            return {"error": "CV no encontrado"}
+        
+        return {
+            "cv_info": {
+                "id": cv.id,
+                "nombre": cv.nombre_completo,
+                "filename": cv.filename,
+                "score": cv.overall_score,
+                "años_experiencia": cv.anhos_experiencia
+            },
+            "clasificacion": {
+                "rol": {
+                    "nombre": cv.rol.nombre if cv.rol else None,
+                    "descripcion": cv.rol.descripcion if cv.rol else None
+                },
+                "seniority": {
+                    "nombre": cv.puesto.nombre if cv.puesto else None,
+                    "rango_años": f"{cv.puesto.min_anhos}-{cv.puesto.max_anhos or '+'}" if cv.puesto else None
+                },
+                "industria_principal": {
+                    "nombre": cv.industria.nombre if cv.industria else None,
+                    "descripcion": cv.industria.descripcion if cv.industria else None
+                }
+            },
+            "experiencias": [
+                {
+                    "empresa": exp.empresa,
+                    "posicion": exp.posicion,
+                    "industria": exp.industria.nombre if exp.industria else None,
+                    "actual": exp.es_actual
+                }
+                for exp in cv.experiencias
+            ],
+            "habilidades": [h.nombre for h in cv.habilidades],
+            "idiomas": [l.nombre for l in cv.lenguajes],
+            "educacion_count": len(cv.educacion),
+            "proyectos_count": len(cv.proyectos)
+        }
