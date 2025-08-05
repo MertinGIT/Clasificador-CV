@@ -52,7 +52,7 @@ def get_classifier(db: Session = Depends(get_db)):
 
 def get_ollama_processor(db: Session = Depends(get_db)):
     """Retorna el procesador de CVs con Ollama"""
-    return OllamaCVProcessor(ollama_client, model="llama2", db_session=db)
+    return OllamaCVProcessor(ollama_client, model="llama3", db_session=db)
 
 # Funciones embedding (actualizadas)
 def generate_embedding(text: str, model: str = "nomic-embed-text"):
@@ -93,8 +93,8 @@ def extract_text_from_pdf(file) -> str:
         raise HTTPException(status_code=400, detail=f"Error al procesar PDF: {str(e)}") 
 
 # ========== ENDPOINT PRINCIPAL de subida ==========
-    @app.post("/upload")
-    async def upload_cv_with_ollama(
+@app.post("/upload")
+async def upload_cv_with_ollama(
         file: UploadFile = File(...),
         ollama_processor: OllamaCVProcessor = Depends(get_ollama_processor)
     ):
@@ -562,7 +562,7 @@ RESPUESTA (máximo 600 palabras, directo y actionable):
 
         # Enviar a Ollama con configuración optimizada
         response = ollama_client.chat(
-            model='llama2',  # Puedes usar 'mixtral', 'codellama', etc.
+            model='llama3',  # Puedes usar 'mixtral', 'codellama', etc.
             messages=[{"role": "user", "content": prompt}],
             options={
                 "temperature": 0.2,  # Más determinístico para análisis profesional
