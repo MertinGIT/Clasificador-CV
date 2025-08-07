@@ -15,9 +15,12 @@ import chromadb
 from UniversalCVClassifier import UniversalCVClassifier
 from typing import Dict, List, Optional
 import unidecode
-
+import requests
+from sentence_transformers import SentenceTransformer
 # Importar el nuevo procesador con Ollama
 from ollama_cv_processor import OllamaCVProcessor, create_cv_embedding_text_enhanced
+
+model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
 
 
 load_dotenv()
@@ -54,18 +57,34 @@ def get_ollama_processor(db: Session = Depends(get_db)):
     """Retorna el procesador de CVs con Ollama"""
     return OllamaCVProcessor(ollama_client, model="llama3", db_session=db)
 
-# Funciones embedding (actualizadas)
-def generate_embedding(text: str, model: str = "nomic-embed-text"):
-    """
-    Genera embeddings usando Ollama
-    """
-    try:
-        response = ollama_client.embeddings(model=model, prompt=text)
-        return response["embedding"]
-    except Exception as e:
-        print(f"Error generando embedding: {e}")
+
+import ollama
+import logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+# Funciones embedding
+def generate_embedding(text: str) -> list[float]:
+    if not text or not text.strip():
+        print("⚠️ Texto vacío para embedding")
         return None
 
+    # Limpiar y truncar si es necesario
+    text = text.strip()
+    if len(text) > 8000:
+        text = text[:8000]
+        print("⚠️ Texto truncado a 8000 caracteres")
+
+    # Generar el embedding
+    embedding = model.encode(text).tolist()
+
+    # Validar
+    if embedding and len(embedding) > 0:
+        print(f"✅ Embedding generado exitosamente: {len(embedding)} dimensiones")
+        return embedding
+    else:
+        print("❌ Embedding vacío generado")
+        return None
+    
 # ========== CHROMA DB ==========
 settings = Settings(
     chroma_db_impl="duckdb+parquet",
@@ -73,14 +92,28 @@ settings = Settings(
 )
 chroma_client = chromadb.PersistentClient(path="./chroma_storage")
 collection_name = "cv_embeddings"
+embedding_dimension_esperada = 384  
 
-# Eliminar colección existente si hay conflicto de dimensiones
 existing_collections = chroma_client.list_collections()
-if any(c.name == collection_name for c in existing_collections):
-    chroma_client.delete_collection(name=collection_name)
+existing = next((c for c in existing_collections if c.name == collection_name), None)
 
-# Crear o recrear colección
-collection = chroma_client.get_or_create_collection(name=collection_name)
+if existing:
+    collection = chroma_client.get_collection(name=collection_name)
+    
+    sample = collection.peek(1)
+    if sample and 'embeddings' in sample and len(sample['embeddings']) > 0:
+        actual_dim = len(sample['embeddings'][0])
+        if actual_dim != embedding_dimension_esperada:
+            print(f"⚠️ Dimensión incompatible ({actual_dim} != {embedding_dimension_esperada}), eliminando colección")
+            chroma_client.delete_collection(name=collection_name)
+            collection = chroma_client.create_collection(name=collection_name)
+        else:
+            print("Colección existente con dimensión válida")
+    else:
+        print("ℹColección vacía o sin embeddings")
+else:
+    collection = chroma_client.create_collection(name=collection_name)
+    print(" Colección creada")
 
 # ========== UTILIDAD PARA EXTRAER TEXTO DE PDF ==========
 def extract_text_from_pdf(file) -> str:
@@ -295,7 +328,7 @@ def get_complete_cv_analysis(
 
 # ========== BÚSQUEDA MEJORADA ==========
 @app.get("/search")
-def search_cvs_enhanced(
+def search_cvs_enhanced_fixed(
     query: str,
     n_results: int = 10,
     min_score: Optional[float] = None,
@@ -305,149 +338,285 @@ def search_cvs_enhanced(
     use_embeddings: bool = True
 ):
     """
-    Búsqueda avanzada con filtros de Ollama
+    Búsqueda con filtros corregidos para ChromaDB
     """
+    import traceback
+    
     try:
-        # Construir filtros mejorados
-        where_conditions = {}
-        if min_score is not None:
-            where_conditions["score"] = {"$gte": min_score}
-        if industry_filter:
-            where_conditions["industry"] = industry_filter
-        if role_filter:
-            where_conditions["role"] = {"$contains": role_filter}
-        if seniority_filter:
-            where_conditions["seniority"] = seniority_filter
+        print(f"🔍 BÚSQUEDA INICIADA: {query}")
+        print(f"🎯 Filtros recibidos: industry={industry_filter}, min_score={min_score}")
         
+        # 1. VERIFICAR COLECCIÓN
+        collection_count = collection.count()
+        print(f"📊 Documentos en colección: {collection_count}")
+        
+        if collection_count == 0:
+            return {
+                "query": query,
+                "total_matches": 0,
+                "matches": [],
+                "error": "No hay CVs en la base de datos"
+            }
+
+        # 2. CONSTRUIR FILTROS CORRECTAMENTE PARA CHROMADB
+        where_conditions = None  # Inicializar como None
+        
+        # IMPORTANTE: ChromaDB requiere formato específico para filtros
+        filters_list = []
+        
+        if min_score is not None:
+            try:
+                min_score_float = float(min_score)
+                filters_list.append({"score": {"$gte": min_score_float}})
+                print(f"✅ Filtro score agregado: >= {min_score_float}")
+            except (ValueError, TypeError) as e:
+                print(f"⚠️ Error en min_score: {e}")
+        
+        if industry_filter and industry_filter.strip():
+            # Usar $eq en lugar de valor directo para mayor compatibilidad
+            filters_list.append({"industry": {"$eq": industry_filter.strip()}})
+            print(f"✅ Filtro industry agregado: {industry_filter}")
+        
+        if role_filter and role_filter.strip():
+            # Para búsqueda de texto dentro del campo, usar $contains si está soportado
+            filters_list.append({"role": {"$contains": role_filter.strip()}})
+            print(f"✅ Filtro role agregado: contains '{role_filter}'")
+        
+        if seniority_filter and seniority_filter.strip():
+            filters_list.append({"seniority": {"$eq": seniority_filter.strip()}})
+            print(f"✅ Filtro seniority agregado: {seniority_filter}")
+        
+        # Combinar filtros usando $and si hay múltiples
+        if len(filters_list) == 1:
+            where_conditions = filters_list[0]
+        elif len(filters_list) > 1:
+            where_conditions = {"$and": filters_list}
+        
+        print(f"🔧 Filtros finales para ChromaDB: {where_conditions}")
+
+        # 3. GENERAR EMBEDDING SI ESTÁ HABILITADO
+        query_embedding = None
         if use_embeddings:
-            # Generar embedding para la consulta
-            print("Usa embeddings")
+            print("🧠 Generando embedding...")
             query_embedding = generate_embedding(query)
-            
             if query_embedding:
-                # Búsqueda usando embeddings
-                results = collection.query(
-                    query_embeddings=[query_embedding],
-                    n_results=n_results,
-                    where=where_conditions if where_conditions else None
-                )
+                print("✅ Embedding generado exitosamente")
             else:
-                # Fallback a búsqueda por texto
-                results = collection.query(
-                    query_texts=[query],
-                    n_results=n_results,
-                    where=where_conditions if where_conditions else None
-                )
-        else:
-            # Búsqueda tradicional por texto
-            results = collection.query(
-                query_texts=[query],
-                n_results=n_results,
-                where=where_conditions if where_conditions else None
+                print("⚠️ Fallback a búsqueda por texto")
+
+        # 4. EJECUTAR BÚSQUEDA CON MANEJO DE ERRORES MEJORADO
+        try:
+            print("🔍 Ejecutando consulta a ChromaDB...")
+            
+            # Preparar parámetros base
+            query_params = {
+                "n_results": n_results,
+                "include": ["documents", "metadatas", "distances"]
+            }
+            
+            # Agregar query (embedding o texto)
+            if query_embedding:
+                query_params["query_embeddings"] = [query_embedding]
+                search_method = "embeddings"
+            else:
+                query_params["query_texts"] = [query]
+                search_method = "text"
+            
+            # Agregar filtros solo si existen
+            if where_conditions:
+                query_params["where"] = where_conditions
+                print(f"🔧 Aplicando filtros: {where_conditions}")
+            else:
+                print("🔧 Sin filtros aplicados")
+            
+            print(f"📋 Parámetros de consulta: {query_params}")
+            
+            # EJECUTAR CONSULTA
+            results = collection.query(**query_params)
+            print("✅ Consulta ejecutada exitosamente")
+            
+        except Exception as query_error:
+            print(f"❌ Error en consulta ChromaDB: {query_error}")
+            traceback.print_exc()
+            
+            # FALLBACK 1: Intentar sin filtros
+            try:
+                print("🔄 FALLBACK 1: Intentando sin filtros...")
+                fallback_params = {
+                    "n_results": n_results,
+                    "include": ["documents", "metadatas", "distances"]
+                }
+                
+                if query_embedding:
+                    fallback_params["query_embeddings"] = [query_embedding]
+                else:
+                    fallback_params["query_texts"] = [query]
+                
+                results = collection.query(**fallback_params)
+                search_method += "_no_filters"
+                print("✅ Fallback 1 exitoso")
+                
+            except Exception as fallback_error:
+                print(f"❌ Error en fallback 1: {fallback_error}")
+                
+                # FALLBACK 2: Solo búsqueda por texto sin filtros
+                try:
+                    print("🔄 FALLBACK 2: Solo texto, sin filtros...")
+                    results = collection.query(
+                        query_texts=[query],
+                        n_results=n_results,
+                        include=["documents", "metadatas", "distances"]
+                    )
+                    search_method = "text_simple"
+                    print("✅ Fallback 2 exitoso")
+                    
+                except Exception as final_error:
+                    print(f"❌ Error en fallback final: {final_error}")
+                    raise HTTPException(
+                        status_code=500, 
+                        detail=f"Error en todas las búsquedas: {str(final_error)}"
+                    )
+
+        # 5. PROCESAR RESULTADOS
+        try:
+            documents = results.get("documents", [[]])[0]
+            metadatas = results.get("metadatas", [[]])[0]
+            distances = results.get("distances", [[]])[0]
+            
+            print(f"📊 Resultados procesados: {len(documents)} documentos")
+            
+            matches = []
+            
+            for i, (doc, meta, distance) in enumerate(zip(documents, metadatas, distances)):
+                try:
+                    # Calcular similitud de manera segura
+                    similarity_score = None
+                    if distance is not None:
+                        similarity_score = max(0, min(1, 1 - float(distance)))
+                    
+                    # Determinar match strength
+                    if similarity_score is not None:
+                        if similarity_score > 0.8:
+                            match_strength = "Excelente"
+                        elif similarity_score > 0.6:
+                            match_strength = "Bueno"
+                        elif similarity_score > 0.4:
+                            match_strength = "Regular"
+                        else:
+                            match_strength = "Bajo"
+                    else:
+                        match_strength = "N/A"
+                    
+                    # Construir match con valores por defecto seguros
+                    match = {
+                        "cv_id": meta.get("cv_id", f"unknown_{i}"),
+                        "nombre": meta.get("nombre", "N/A"),
+                        "filename": meta.get("filename", "N/A"),
+                        "score": meta.get("score", 0),
+                        "role": meta.get("role", "N/A"),
+                        "seniority": meta.get("seniority", "N/A"),
+                        "experience": meta.get("experience", "N/A"),
+                        "industry": meta.get("industry", "N/A"),
+                        "skills_count": meta.get("skills_count", 0),
+                        "soft_skills_count": meta.get("soft_skills_count", 0),
+                        "languages_count": meta.get("languages_count", 0),
+                        "calidad_cv": meta.get("calidad_cv", "N/A"),
+                        "similarity": f"{similarity_score * 100:.1f}%" if similarity_score is not None else "N/A",
+                        "match_strength": match_strength,
+                        "preview": str(doc)[:300] + "..." if len(str(doc)) > 300 else str(doc),
+                        "distance": distance
+                    }
+                    
+                    matches.append(match)
+                    
+                except Exception as match_error:
+                    print(f"⚠️ Error procesando match {i}: {match_error}")
+                    continue
+            
+            # Ordenar por distancia (menor = mejor)
+            if matches and any(m.get("distance") is not None for m in matches):
+                matches.sort(key=lambda x: x.get("distance", float('inf')))
+            
+            print(f"✅ Procesamiento completado: {len(matches)} matches válidos")
+            
+            return {
+                "query": query,
+                "search_method": f"ollama_{search_method}",
+                "filters_applied": {
+                    "min_score": min_score,
+                    "industry": industry_filter,
+                    "role": role_filter,
+                    "seniority": seniority_filter
+                },
+                "total_matches": len(matches),
+                "matches": matches,
+                "debug_info": {
+                    "collection_count": collection_count,
+                    "embedding_used": query_embedding is not None,
+                    "filters_used": where_conditions is not None,
+                    "original_results": len(documents)
+                }
+            }
+            
+        except Exception as processing_error:
+            print(f"❌ Error procesando resultados: {processing_error}")
+            traceback.print_exc()
+            raise HTTPException(
+                status_code=500, 
+                detail=f"Error procesando resultados: {str(processing_error)}"
             )
         
-        # Formatear resultados mejorados
-        matches = []
-        documents = results.get("documents", [[]])[0]
-        metadatas = results.get("metadatas", [[]])[0]
-        distances = results.get("distances", [[]])[0]
-        
-        for doc, meta, distance in zip(documents, metadatas, distances):
-            # Calcular score de similitud
-            similarity_score = round(1 - distance, 3) if distance is not None else None
-            
-            matches.append({
-                "cv_id": meta.get("cv_id"),
-                "nombre": meta.get("nombre", "N/A"),
-                "filename": meta.get("filename", "N/A"),
-                "score": meta.get("score", 0),
-                "role": meta.get("role", "N/A"),
-                "seniority": meta.get("seniority", "N/A"),
-                "experience": meta.get("experience", "N/A"),
-                "industry": meta.get("industry", "N/A"),
-                "skills_count": meta.get("skills_count", 0),
-                "soft_skills_count": meta.get("soft_skills_count", 0),
-                "languages_count": meta.get("languages_count", 0),
-                "calidad_cv": meta.get("calidad_cv", "N/A"),
-                "similarity": similarity_score,
-                "match_strength": "Excelente" if similarity_score and similarity_score > 0.8 
-                                else "Bueno" if similarity_score and similarity_score > 0.6 
-                                else "Regular" if similarity_score and similarity_score > 0.4 
-                                else "Bajo",
-                "preview": doc[:300] + "..." if len(doc) > 300 else doc
-            })
-        
-        # Ordenar por similitud si está disponible
-        if matches and matches[0]["similarity"] is not None:
-            matches.sort(key=lambda x: x["similarity"], reverse=True)
-        
-        return {
-            "query": query,
-            "search_method": "ollama_enhanced_embeddings" if use_embeddings and query_embedding else "text",
-            "filters_applied": {
-                "min_score": min_score,
-                "industry": industry_filter,
-                "role": role_filter,
-                "seniority": seniority_filter
-            },
-            "total_matches": len(matches),
-            "matches": matches
-        }
-        
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error en búsqueda: {str(e)}")
-
+        print(f"❌ ERROR GENERAL: {e}")
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Error interno del servidor: {str(e)}"
+        )
+    
 # ========== CONSULTA CON LLM MEJORADA ==========
-@app.get("/ask")
-def ask_llm_enhanced(
-    query: str,
-    industry_filter: Optional[str] = None,
-    min_score: Optional[float] = None,
-    role_filter: Optional[str] = None,
-    seniority_filter: Optional[str] = None
-):
-    """
-    Consulta inteligente mejorada con datos de Ollama
-    """
-    try:
-        # Construir filtros opcionales
-        context_filter = {}
-        if industry_filter:
-            context_filter["industry"] = industry_filter
-        if min_score is not None:
-            context_filter["score"] = {"$gte": min_score}
-        if role_filter:
-            context_filter["role"] = {"$contains": role_filter}
-        if seniority_filter:
-            context_filter["seniority"] = seniority_filter
-        
-        answer = query_with_llm_enhanced(query, context_filter if context_filter else None)
-        
-        return {
-            "query": query,
-            "filters_applied": {
-                "industry": industry_filter,
-                "min_score": min_score,
-                "role": role_filter,
-                "seniority": seniority_filter
-            },
-            "answer": answer,
-            "processing_method": "ollama_enhanced"
-        }
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error procesando consulta: {str(e)}")
 
+import traceback
+import time
 def query_with_llm_enhanced(question: str, context_filter: Optional[Dict] = None):
     """
-    Consulta mejorada usando LLM con contexto enriquecido de Ollama
+    Consulta mejorada con diagnóstico completo para debugging
     """
     try:
-        # Generar embedding para la pregunta
+        logger.info(f"🔍 INICIANDO CONSULTA: {question}")
+        logger.info(f"🔧 Filtros aplicados: {context_filter}")
+        
+        # 1. VERIFICAR ESTADO DE LA COLECCIÓN
+        try:
+            collection_count = collection.count()
+            logger.info(f"📊 Documentos en colección ChromaDB: {collection_count}")
+            
+            if collection_count == 0:
+                logger.error("❌ LA COLECCIÓN ESTÁ VACÍA - No hay CVs indexados")
+                return """
+                *COLECCIÓN VACÍA**
+
+                """
+        except Exception as e:
+            logger.error(f"❌ Error verificando colección: {e}")
+            return f"❌ Error accediendo a la base de datos de CVs: {str(e)}"
+        
+        # 2. GENERAR EMBEDDING PARA LA PREGUNTA
+        logger.info("🧠 Generando embedding para la pregunta...")
         question_embedding = generate_embedding(question)
         
-        # Configurar parámetros de búsqueda
-        search_params = {"n_results": 5, "include": ["metadatas", "documents", "distances"]}
+        if not question_embedding:
+            logger.error("❌ No se pudo generar embedding para la pregunta")
+            # Fallback a búsqueda por texto
+            logger.info("🔄 Fallback: usando búsqueda por texto")
+        
+        # 3. CONFIGURAR PARÁMETROS DE BÚSQUEDA
+        search_params = {
+            "n_results": 5, 
+            "include": ["metadatas", "documents", "distances"]
+        }
         
         if context_filter:
             search_params["where"] = context_filter
@@ -455,22 +624,99 @@ def query_with_llm_enhanced(question: str, context_filter: Optional[Dict] = None
         # Usar embedding si está disponible, sino usar texto
         if question_embedding:
             search_params["query_embeddings"] = [question_embedding]
+            search_method = "embeddings"
         else:
             search_params["query_texts"] = [question]
+            search_method = "text"
             
-        results = collection.query(**search_params)
+        logger.info(f"🔍 Método de búsqueda: {search_method}")
+        logger.info(f"📋 Parámetros de búsqueda: {search_params}")
         
+        # 4. EJECUTAR BÚSQUEDA CON DIAGNÓSTICO
+        try:
+            logger.info("🔍 Ejecutando consulta en ChromaDB...")
+            results = collection.query(**search_params)
+            logger.info(f"✅ Consulta ejecutada. Estructura de respuesta: {list(results.keys())}")
+            
+        except Exception as e:
+            logger.error(f"❌ Error en consulta ChromaDB: {e}")
+            
+            # Intentar consulta básica para diagnóstico
+            try:
+                logger.info("🔄 Intentando consulta básica para diagnóstico...")
+                basic_results = collection.query(
+                    query_texts=[question],
+                    n_results=3,
+                    include=["documents", "metadatas"]
+                )
+                logger.info(f"✅ Consulta básica exitosa: {len(basic_results.get('documents', [[]])[0])} resultados")
+                results = basic_results
+                
+            except Exception as basic_error:
+                logger.error(f"❌ Error en consulta básica: {basic_error}")
+                return f"❌ Error ejecutando búsqueda: {str(e)}"
+        
+        # 5. PROCESAR Y ANALIZAR RESULTADOS
         docs = results.get("documents", [[]])[0]
         metadatas = results.get("metadatas", [[]])[0]
         distances = results.get("distances", [[]])[0]
-
+        
+        logger.info(f"📊 RESULTADOS OBTENIDOS:")
+        logger.info(f"   - Documentos: {len(docs)}")
+        logger.info(f"   - Metadatos: {len(metadatas)}")
+        logger.info(f"   - Distancias: {len(distances)}")
+        
+        # DIAGNÓSTICO DETALLADO
         if not docs:
-            return "No se encontraron CVs relevantes para tu consulta."
+            # Intentar obtener algunos documentos para ver qué hay en la colección
+            try:
+                sample_results = collection.get(limit=3, include=["metadatas", "documents"])
+                sample_docs = sample_results.get("documents", [])
+                sample_metas = sample_results.get("metadatas", [])
+                
+                logger.info(f"📋 MUESTRA DE DOCUMENTOS EN COLECCIÓN ({len(sample_docs)} ejemplos):")
+                for i, (doc, meta) in enumerate(zip(sample_docs[:3], sample_metas[:3])):
+                    logger.info(f"   Doc {i+1}: {doc[:100]}...")
+                    logger.info(f"   Meta {i+1}: {meta}")
+                
+                diagnosis = f"""
+SIN MATCHES PARA TU CONSULTA**
 
-        # Construir contexto super enriquecido para la LLM
+**Tu consulta:** "{question}"
+**Documentos en colección:** {collection_count}
+**Método de búsqueda:** {search_method}
+
+**ANÁLISIS:**
+- La colección tiene {len(sample_docs)} documentos indexados
+- Pero ninguno coincide semánticamente con tu búsqueda
+- Esto puede deberse a:
+  1. **Vocabulario diferente**: Los CVs usan términos diferentes
+  2. **Falta de contexto**: Los CVs no tienen información sobre estudios actuales
+  3. **Embeddings no optimizados**: El modelo no captura la semántica correctamente
+
+**MUESTRA DE CONTENIDO DISPONIBLE:**
+{chr(10).join([f"• {meta.get('nombre', 'N/A')} - {meta.get('role', 'N/A')} ({doc[:80]}...)" for doc, meta in zip(sample_docs[:3], sample_metas[:3])])}
+
+**RECOMENDACIONES:**
+1. **Prueba términos más específicos**: "desarrollador python", "asistente de administracion"
+2. **Busca por habilidades concretas**: "tensorflow", "scikit-learn", "pandas"
+3. **Usa filtros**: agrega industry_filter o role_filter
+4. **Revisa los CVs disponibles**: usa `/cvs` para ver qué perfiles tienes
+
+                """
+                
+                return diagnosis
+                
+            except Exception as sample_error:
+                logger.error(f"❌ Error obteniendo muestra: {sample_error}")
+                return f"❌ No se encontraron CVs relevantes y no se pudo obtener diagnóstico: {str(sample_error)}"
+
+        # 6. Si hay resultados, continuar con el análisis normal
         context_parts = []
         for i, (doc, meta, distance) in enumerate(zip(docs, metadatas, distances), 1):
             similarity = round(1 - distance, 3) if distance is not None else "N/A"
+            
+            logger.info(f"   Resultado {i}: Similitud={similarity}, ID={meta.get('cv_id', 'N/A')}")
             
             context_parts.append(f"""
 CANDIDATO #{i} (Relevancia semántica: {similarity}):
@@ -499,83 +745,120 @@ CONTENIDO RELEVANTE:
 
         context = "\n".join(context_parts)
 
+        # Prompt optimizado para el análisis
         prompt = f"""
 Eres un reclutador senior experto con más de 15 años de experiencia en selección de personal tecnológico y empresarial. 
-Tienes acceso a un sistema avanzado de análisis de CVs con embeddings semánticos que te proporciona los candidatos más relevantes.
 
-CONTEXTO - CANDIDATOS MÁS RELEVANTES (ordenados por relevancia semántica):
+CONTEXTO - CANDIDATOS MÁS RELEVANTES:
 {context}
 
 CONSULTA DEL RECLUTADOR:
 {question}
 
-INSTRUCCIONES ESPECÍFICAS PARA TU ANÁLISIS:
+INSTRUCCIONES:
+Analiza los candidatos encontrados y proporciona una recomendación estructurada.
+Si la relevancia semántica es baja (<0.4), menciona que los matches no son ideales.
 
-🎯 ANÁLISIS DE RELEVANCIA:
-- Los valores de relevancia semántica (0-1) indican qué tan bien coincide cada CV con la consulta
-- Valores >0.8 = Match excelente | 0.6-0.8 = Buen match | 0.4-0.6 = Match regular | <0.4 = Match bajo
-- Prioriza candidatos con alta relevancia semántica Y score global alto
-
-🧠 EVALUACIÓN INTEGRAL:
-- Analiza no solo habilidades técnicas, sino también soft skills y calidad del CV
-- Considera seniority vs experiencia (pueden no coincidir siempre)
-- Evalúa la coherencia entre rol, industria y habilidades
-
-💡 INSIGHTS AVANZADOS:
-- Identifica patrones interesantes entre los candidatos
-- Detecta fortalezas únicas o combinaciones raras de skills
-- Sugiere candidatos "diamantes en bruto" (alta relevancia, score menor)
-
-⚠️ GAPS Y LIMITACIONES:
-- Si ningún candidato es perfecto, explica específicamente qué falta
-- Sugiere búsquedas alternativas o filtros adicionales
-- Recomienda si ampliar criterios o ser más específicos
-
-FORMATO DE RESPUESTA ESTRUCTURADA:
-
-🔥 RESUMEN EJECUTIVO (2-3 líneas clave)
-
-⭐ TOP CANDIDATOS RECOMENDADOS:
-[Para cada candidato menciona ID, nombre, por qué es ideal, fortalezas clave]
-
-📊 ANÁLISIS COMPARATIVO:
-[Patrones, tendencias, diferenciadores entre candidatos]
-
-⚠️ GAPS IDENTIFICADOS:
-[Qué no encuentras en los resultados actuales]
-
-🎯 RECOMENDACIONES ESTRATÉGICAS:
-[Próximos pasos, filtros adicionales, búsquedas complementarias]
-
-INSTRUCCIONES ESPECÍFICAS:
-- Analiza la relevancia semántica de cada CV (valores más altos = mejor match)
-- Prioriza candidatos con mayor score global y relevancia
-- Para cada recomendación, menciona el ID del CV para referencia
-- Identifica patrones y tendencias en los candidatos encontrados
-- Si recomiendas un candidato, explica específicamente por qué es ideal
-- Menciona tanto fortalezas como posibles limitaciones
-- Si ningún CV es perfecto, sugiere el mejor match disponible y qué buscar adicionalmente
-- Sé conciso pero detallado, máximo 500 palabras
-
-RESPUESTA (máximo 600 palabras, directo y actionable):
+RESPUESTA (máximo 400 palabras):
         """
+        logger.info("🤖 Enviando contexto a LLM para análisis...")
+        
+        try:
+            response = ollama_client.chat(
+                model="llama3",
+                messages=[{"role": "user", "content": prompt}],
+                options={
+                    "temperature": 0.2,
+                    "top_p": 0.9,
+                    "num_ctx": 4096,
+                    "num_predict": 600,
+                },
+                stream=False
+            )
+            
+            if response and 'message' in response and 'content' in response['message']:
+                content = response['message']['content'].strip()
+                logger.info(f"✅ Análisis LLM completado: {len(content)} caracteres")
+                return content
+            else:
+                logger.error("❌ Respuesta inválida del LLM")
+                return f"✅ Encontrados {len(docs)} candidatos, pero error en análisis LLM."
+                
+        except Exception as llm_error:
+            logger.error(f"❌ Error en LLM: {llm_error}")
+            # Retornar análisis básico
+            basic_analysis = f"""
+✅ **CANDIDATOS ENCONTRADOS: {len(docs)}**
 
-        # Enviar a Ollama con configuración optimizada
-        response = ollama_client.chat(
-            model='llama3',  # Puedes usar 'mixtral', 'codellama', etc.
-            messages=[{"role": "user", "content": prompt}],
-            options={
-                "temperature": 0.2,  # Más determinístico para análisis profesional
-                "top_p": 0.9,
-                "top_k": 40,
-                "num_ctx": 4096  # Contexto amplio para análisis complejo
-            }
-        )
+**RESULTADOS:**
+{chr(10).join([f"• {meta.get('nombre', 'N/A')} - {meta.get('role', 'N/A')} (ID: {meta.get('cv_id', 'N/A')})" for meta in metadatas[:3]])}
 
-        return response['message']['content']
+**NOTA:** Error en análisis avanzado, pero los candidatos están disponibles para revisión manual.
+            """
+            return basic_analysis
         
     except Exception as e:
-        return f"Error al procesar consulta con LLM: {str(e)}"
+        logger.error(f"❌ Error general en query_with_llm_enhanced_debug: {e}")
+        traceback.print_exc()
+        return f"Error al procesar consulta: {str(e)}"
+
+@app.get("/ask")
+def ask_llm_enhanced(
+    query: str,
+    industry_filter: Optional[str] = None,
+    min_score: Optional[float] = None,
+    role_filter: Optional[str] = None,
+    seniority_filter: Optional[str] = None
+):
+    """
+    Consulta inteligente mejorada con datos de Ollama - ERROR JSON CORREGIDO
+    """
+    try:
+        logger.info(f"🔍 Procesando consulta: {query}")
+        logger.info(f"🎯 Filtros: industry={industry_filter}, min_score={min_score}, role={role_filter}, seniority={seniority_filter}")
+        
+        # Construir filtros opcionales
+        context_filter = {}
+        if industry_filter:
+            context_filter["industry"] = {"$eq": industry_filter}
+        if min_score is not None:
+            context_filter["score"] = {"$gte": min_score}
+        if role_filter:
+            context_filter["role"] = {"$contains": role_filter}
+        if seniority_filter:
+            context_filter["seniority"] = {"$eq": seniority_filter}
+        
+        # Combinar filtros si hay múltiples
+        if len(context_filter) > 1:
+            context_filter = {"$and": list(context_filter.values())}
+        elif len(context_filter) == 1:
+            context_filter = list(context_filter.values())[0]
+        else:
+            context_filter = None
+        
+        logger.info(f"🔧 Filtros procesados: {context_filter}")
+        
+        answer = query_with_llm_enhanced(query, context_filter)
+        
+        return {
+            "query": query,
+            "filters_applied": {
+                "industry": industry_filter,
+                "min_score": min_score,
+                "role": role_filter,
+                "seniority": seniority_filter
+            },
+            "answer": answer,
+            "processing_method": "ollama_enhanced_fixed",
+            "status": "success"
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Error en ask_llm_enhanced: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Error procesando consulta: {str(e)}")
+
+
 
 # ========== ENDPOINTS ADICIONALES ==========
 
@@ -653,9 +936,6 @@ def regenerate_all_embeddings_enhanced(
     db: Session = Depends(get_db),
     ollama_processor: OllamaCVProcessor = Depends(get_ollama_processor)
 ):
-    """
-    Regenera embeddings mejorados para todos los CVs existentes usando Ollama
-    """
     try:
         cvs = db.query(CV).all()
         updated_count = 0
@@ -665,12 +945,10 @@ def regenerate_all_embeddings_enhanced(
             try:
                 print(f"[INFO] Regenerando embedding para CV {cv.id}: {cv.filename}")
                 
-                # Si tenemos contenido original, reprocesar con Ollama
                 contenido_original = getattr(cv, 'contenido', None)
                 if contenido_original:
                     analysis = ollama_processor.process_cv_with_ollama(contenido_original)
                     embedding_text = create_cv_embedding_text_enhanced(analysis)
-                    
                     metadata = {
                         "cv_id": cv.id,
                         "nombre": analysis.nombre,
@@ -686,7 +964,6 @@ def regenerate_all_embeddings_enhanced(
                         "calidad_cv": analysis.calidad_cv,
                     }
                 else:
-                    # Fallback a datos existentes
                     embedding_text = f"""
 Nombre: {cv.nombre_completo or 'N/A'}
 Rol: {cv.rol.nombre if cv.rol else 'N/A'}
@@ -713,13 +990,11 @@ Idiomas: {', '.join([l.nombre for l in cv.lenguajes])}
                 embedding = generate_embedding(embedding_text)
                 
                 if embedding:
-                    # Eliminar el embedding anterior si existe
                     try:
                         collection.delete(ids=[str(cv.id)])
-                    except:
+                    except Exception:
                         pass
                     
-                    # Agregar nuevo embedding
                     collection.add(
                         documents=[embedding_text],
                         embeddings=[embedding],
@@ -740,12 +1015,13 @@ Idiomas: {', '.join([l.nombre for l in cv.lenguajes])}
             "total_cvs": len(cvs),
             "updated_count": updated_count,
             "errors": errors,
-            "method": "ollama_enhanced"
+            "method": "sentence_transformers"
         }
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error regenerando embeddings: {str(e)}")
-
+    
+     
 @app.get("/stats")
 def get_stats_enhanced(db: Session = Depends(get_db)):
     """Obtiene estadísticas generales del sistema mejoradas"""
@@ -783,35 +1059,6 @@ def get_stats_enhanced(db: Session = Depends(get_db)):
         "calidad_cv_distribution": calidad_stats,
         "processing_method": "ollama_enhanced"
     }
-
-# ========== NUEVO ENDPOINT PARA TESTING OLLAMA ==========
-@app.post("/test-ollama")
-async def test_ollama_processing(
-    text: str,
-    ollama_processor: OllamaCVProcessor = Depends(get_ollama_processor)
-):
-    """
-    Endpoint para testear el procesamiento de Ollama con texto directo
-    """
-    try:
-        analysis = ollama_processor.process_cv_with_ollama(text)
-        
-        return {
-            "status": "success",
-            "analysis": {
-                "nombre": analysis.nombre,
-                "rol_sugerido": analysis.rol_sugerido,
-                "seniority": analysis.seniority,
-                "anos_experiencia": analysis.anos_experiencia,
-                "overall_score": analysis.overall_score,
-                "habilidades_tecnicas": analysis.habilidades_tecnicas,
-                "soft_skills": analysis.soft_skills,
-                "resumen_profesional": analysis.resumen_profesional,
-                "embedding_text": analysis.embedding_text[:200] + "..." if len(analysis.embedding_text) > 200 else analysis.embedding_text
-            }
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error testing Ollama: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn

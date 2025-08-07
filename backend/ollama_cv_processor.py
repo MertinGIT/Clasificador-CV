@@ -76,36 +76,101 @@ class OllamaCVProcessor:
         🎯 ROL PROFESIONAL (LÓGICA GENERAL):
         1. PRIORIZA experiencia laboral reciente y contenido de trabajo actual
         2. Identifica el área principal basándote en la experiencia práctica:
-        - Tecnología: Desarrollo, DevOps, QA, Soporte Técnico, Data Science, etc.
-        - Marketing: Digital, Tradicional, Content, SEO, Social Media, etc.
-        - Ventas: B2B, B2C, Account Management, Business Development, etc.
-        - Recursos Humanos: Reclutamiento, Capacitación, Compensaciones, etc.
-        - Finanzas: Contabilidad, Análisis Financiero, Auditoría, Tesorería, etc.
-        - Operaciones: Logística, Supply Chain, Producción, Calidad, etc.
-        - Diseño: Gráfico, UX/UI, Industrial, Arquitectura, etc.
-        - Educación: Docencia, Capacitación, Desarrollo Curricular, etc.
-        - Salud: Medicina, Enfermería, Psicología, Terapias, etc.
-        - Legal: Abogacía, Compliance, Contratos, Propiedad Intelectual, etc.
-        - Consultoría: Management, Estrategia, Procesos, Especializada, etc.
+        
+        **TECNOLOGÍA E IT:**
+        - Desarrollo: Frontend, Backend, Full Stack, Mobile
+        - DevOps: Infrastructure, Cloud, CI/CD
+        - QA: Testing, Automation, Quality Assurance
+        - Data: Data Science, Analytics, Business Intelligence
+        - Soporte: Help Desk, IT Support, System Administration
+        - Ciberseguridad: Security Analyst, Pentesting
+        
+        **NEGOCIOS Y ADMINISTRACIÓN:**
+        - Marketing: Digital, Tradicional, Content, SEO/SEM, Social Media
+        - Ventas: B2B, B2C, Account Management, Business Development
+        - Recursos Humanos: Reclutamiento, Capacitación, Compensaciones, Relaciones Laborales
+        - Finanzas: Contabilidad, Análisis Financiero, Auditoría, Tesorería, Control de Gestión
+        - Operaciones: Logística, Supply Chain, Producción, Calidad, Mejora Continua
+        - Consultoría: Management, Estrategia, Procesos, Especializada
+        - Administración: Gestión General, Coordinación, Supervisión
+        
+        **CREATIVIDAD Y COMUNICACIÓN:**
+        - Diseño: Gráfico, UX/UI, Industrial, Arquitectura, Interiorismo
+        - Marketing Creativo: Publicidad, Branding, Campañas
+        - Comunicación: Relaciones Públicas, Comunicación Interna, Periodismo
+        - Contenido: Redacción, Content Management, Copywriting
+        
+        **SERVICIOS ESPECIALIZADOS:**
+        - Educación: Docencia, Capacitación, Desarrollo Curricular, Investigación
+        - Salud: Medicina, Enfermería, Psicología, Terapias, Administración Hospitalaria
+        - Legal: Abogacía, Compliance, Contratos, Propiedad Intelectual
+        - Ingeniería: Civil, Industrial, Mecánica, Eléctrica, Química
+        - Arquitectura: Diseño Arquitectónico, Urbanismo, Construcción
+        
+        **SECTORES ESPECÍFICOS:**
+        - Agro: Agronomía, Veterinaria, Producción Agrícola
+        - Turismo: Hotelería, Gastronomía, Gestión Turística
+        - Retail: Comercio, Merchandising, Customer Experience
+        - Manufactura: Producción, Mantenimiento, Supervisión Industrial
+        - Logística: Transporte, Almacenamiento, Distribución
+        
         3. Combina áreas si aplica: "Marketing Digital y Ventas", "Finanzas y Operaciones", etc.
         4. Solo usar títulos educativos si NO hay experiencia laboral relevante
 
         💼 EXTRACCIÓN DE HABILIDADES Y COMPETENCIAS:
-        Busca MINUCIOSAMENTE todas estas competencias en TODO el CV:
+        Busca MINUCIOSAMENTE todas estas competencias en TODO el CV según el área:
 
-        **Habilidades Técnicas (según área):**
-        - Tecnología: Lenguajes, frameworks, herramientas, cloud, bases de datos, etc.
-        - Marketing: Google Ads, Facebook Ads, SEO, SEM, Analytics, CRM, etc.
-        - Finanzas: Excel avanzado, SAP, ERP, Power BI, análisis financiero, etc.
-        - Diseño: Adobe Suite, Figma, Sketch, AutoCAD, 3D, etc.
-        - Operaciones: Lean, Six Sigma, WMS, ERP, gestión de inventarios, etc.
-        - Ventas: CRM (Salesforce, HubSpot), técnicas de venta, negociación, etc.
+        **TECNOLOGÍA:**
+        - Lenguajes: Python, Java, JavaScript, C#, PHP, etc.
+        - Frameworks: React, Angular, Laravel, Spring, Django, etc.
+        - Bases de Datos: MySQL, PostgreSQL, MongoDB, Oracle, etc.
+        - Cloud: AWS, Azure, Google Cloud, Heroku
+        - DevOps: Docker, Kubernetes, Jenkins, Git
+        - Metodologías: Scrum, Kanban, Agile
 
-        **Herramientas Generales:**
-        Microsoft Office, Google Workspace, Slack, Trello, Jira, Notion, etc.
+        **MARKETING Y VENTAS:**
+        - Plataformas: Google Ads, Facebook Ads, LinkedIn Ads
+        - Analytics: Google Analytics, Facebook Insights, SEMrush
+        - CRM: Salesforce, HubSpot, Pipedrive, Zoho
+        - Email Marketing: Mailchimp, Constant Contact
+        - SEO/SEM: Keyword research, Link building, PPC
+        - Social Media: Content planning, Community management
 
-        **Certificaciones y Especializaciones:**
-        PMP, Scrum Master, Google Analytics, AWS, Microsoft, etc.
+        **FINANZAS Y CONTABILIDAD:**
+        - Software: SAP, ERP, Tango, ContaPlus, QuickBooks
+        - Análisis: Excel avanzado, Power BI, Tableau, SQL
+        - Normativas: NIIF, PCGA, SOX, Basel
+        - Áreas: Presupuestos, Tesorería, Auditoría, Impuestos
+
+        **RECURSOS HUMANOS:**
+        - HRIS: Workday, BambooHR, SAP SuccessFactors
+        - Reclutamiento: LinkedIn Recruiter, Bumeran, ZonaJobs
+        - Evaluación: 360°, Assessment centers, OKRs
+        - Capacitación: LMS, e-learning, coaching
+
+        **DISEÑO Y CREATIVIDAD:**
+        - Software: Adobe Suite (Photoshop, Illustrator, InDesign)
+        - UI/UX: Figma, Sketch, Adobe XD, InVision
+        - 3D: AutoCAD, 3ds Max, SketchUp, Blender
+        - Video: Premiere, After Effects, Final Cut
+
+        **OPERACIONES Y LOGÍSTICA:**
+        - ERP: SAP, Oracle, Microsoft Dynamics
+        - WMS: Warehouse Management Systems
+        - Metodologías: Lean, Six Sigma, Kaizen
+        - Supply Chain: Planificación, Procurement
+
+        **SALUD:**
+        - Software: HIS, EMR, PACS
+        - Especialidades: Cardiología, Pediatría, etc.
+        - Certificaciones: CPR, BLS, especialidades médicas
+
+        **LEGAL:**
+        - Áreas: Derecho civil, penal, laboral, corporativo
+        - Software: LexisNexis, Westlaw, sistemas legales locales
+
+        **HERRAMIENTAS GENERALES:**
+        Microsoft Office, Google Workspace, Slack, Trello, Jira, Notion, Zoom, Teams
 
         EXTRACCIÓN DE FECHAS DE EXPERIENCIA:
         - Busca fechas explícitas: "2020-2023", "Enero 2022 - Presente", etc.
@@ -135,7 +200,8 @@ class OllamaCVProcessor:
         🏢 IDENTIFICACIÓN DE SECTOR:
         Determina el sector principal basándote en la experiencia:
         - Tecnología, Finanzas, Salud, Educación, Retail, Manufactura, 
-        - Consultoría, Marketing, Telecomunicaciones, Energía, etc.
+        - Consultoría, Marketing, Telecomunicaciones, Energía, Agro,
+        - Turismo, Legal, Ingeniería, Arquitectura, Arte, etc.
 
         FORMATO DE RESPUESTA EXACTO:
         {{
@@ -156,7 +222,7 @@ class OllamaCVProcessor:
         }},
         "competencias": {{
             "habilidades_tecnicas": [
-                "SOLO incluir habilidades EXPLÍCITAMENTE mencionadas en el CV"
+                "SOLO incluir habilidades EXPLÍCITAMENTE mencionadas en el CV - pueden ser técnicas, software, metodologías, certificaciones, según el área profesional"
             ],
             "soft_skills": [...],
             "idiomas": [
@@ -176,7 +242,7 @@ class OllamaCVProcessor:
                     "puesto": "...",
                     "fecha_inicio": "YYYY-MM-DD o null si no se encuentra",
                     "fecha_fin": "YYYY-MM-DD o null para trabajos actuales",
-                    "descripcion": "INCLUIR todas las tecnologías mencionadas en la descripción",
+                    "descripcion": "INCLUIR todas las herramientas, metodologías, tecnologías o competencias mencionadas en la descripción",
                     "duracion": "X años Y meses o período aproximado",
                     "actual": true/false
                 }}
@@ -185,7 +251,7 @@ class OllamaCVProcessor:
                 {{
                     "nombre": "...",
                     "descripcion": "...",
-                    "tecnologias": ["extraer", "todas", "las", "tecnologías", "mencionadas"]
+                    "tecnologias": ["extraer", "todas", "las", "herramientas", "metodologías", "o", "competencias", "mencionadas"]
                 }}
             ]
         }},
@@ -202,7 +268,19 @@ class OllamaCVProcessor:
             "comentarios": "..."
         }},
         "embedding_optimizado": {{
-            "texto_embedding": "A partir del texto del CV, genera un resumen profesional completo, detallado y claro. NO omitas información por considerarla poco relevante. El resumen debe incluir de forma explícita: 1) formación académica con nombre de carrera, institución, nivel alcanzado o en curso, y fechas si están presentes; 2) experiencia laboral o pasantías con nombre de la empresa, cargo o rol, periodo, tareas realizadas, tecnologías utilizadas y logros si los hay; 3) conocimientos técnicos específicos, incluyendo lenguajes de programación, frameworks, herramientas ofimáticas, sistemas operativos, plataformas o entornos de desarrollo; 4) habilidades blandas si están mencionadas (como liderazgo, trabajo en equipo, mente abierta, ganas de aprender, etc.); 5) conocimientos generales en otras áreas como ventas, docencia, electrónica, contabilidad, etc.; 6) nivel de idioma con detalle claro; 7) cualquier otro aspecto del CV, como participación en programas o concursos, portafolio, proyectos personales, links (GitHub, etc.), ubicación y contacto. El texto debe ser útil para búsquedas semánticas y clasificación automática de perfiles, reflejando fielmente lo que aparece en el CV, sin inventar información adicional y sin resumir de forma genérica."
+        
+        "texto_embedding": "Genera un resumen profesional optimizado para motores de búsqueda semántica, basado únicamente en la información contenida en el CV. El texto debe ser claro, completo y sin omitir ningún detalle, incluso si parece menor o secundario. Incluir de forma concisa y precisa:
+
+            1) Formación académica: carrera actual (con semestre, institución y situación actual) y estudios previos (bachilleratos, técnicos, etc. con institución y fechas si están).
+            2) Experiencia laboral: listar empresas, cargos, períodos, tareas realizadas y herramientas/metodologías utilizadas en cada experiencia.
+            3) Proyectos personales o freelance: si están mencionados, incluir nombre, herramientas/metodologías y objetivos.
+            4) Competencias profesionales: herramientas de software, metodologías, certificaciones, lenguajes de programación, plataformas, sistemas, según el área profesional.
+            5) Habilidades blandas: incluir solo las explícitamente mencionadas en el CV (ej: liderazgo, resolución de conflictos, trabajo en equipo, etc.).
+            6) Idiomas: mencionar todos los idiomas presentes en el CV con el nivel de dominio indicado (ej: nativo, intermedio, alto).
+            7) Otra información relevante: participación en concursos, ferias, certificaciones, áreas de especialización técnica o académica, etc.
+            8) Informacion personal como ubicacion, numero de telefono, etc.
+
+    ⚠️ No inventar, no asumir, no generalizar. Incluir solo información explícita en el CV. El objetivo es que este texto represente de forma precisa y completa el perfil profesional"
         }}
         }}
 
@@ -212,17 +290,19 @@ class OllamaCVProcessor:
         3. Reemplaza todos los [placeholders] con información real del CV
         4. Si no encuentras información, usa "" para strings y [] para arrays
         5. Para seniority usa: Junior (0-2 años), Semi-Senior (2-5 años), Senior (5+ años)
-        6. Extrae TODAS las tecnologías, herramientas y competencias mencionadas
-        7. ⚠️ CRÍTICO: NO inventes ni supongas habilidades o tecnologías que no estén explícitamente mencionadas en el CV
-        8. ⚠️ CRÍTICO: NO menciones ML, IA, LLM, o tecnologías modernas avanzadas a menos que estén EXPLÍCITAMENTE en el CV
+        6. Extrae TODAS las herramientas, metodologías, software y competencias mencionadas según el área profesional
+        7. ⚠️ CRÍTICO: NO inventes ni supongas habilidades que no estén explícitamente mencionadas en el CV
+        8. ⚠️ CRÍTICO: NO menciones tecnologías avanzadas (ML, IA, LLM) a menos que estén EXPLÍCITAMENTE en el CV
         9. ⚠️ CRÍTICO: Las fortalezas deben basarse ÚNICAMENTE en información real del CV
         10. ⚠️ CRÍTICO: El texto de embedding debe incluir SOLO información verificable del CV
+        11. ⚠️ CRÍTICO: Las habilidades técnicas incluyen cualquier competencia profesional específica del área (no solo programación)
 
         JSON RESPONSE:
 
         """
 
         return prompt
+
 
     
     def process_cv_with_ollama(self, cv_text: str) -> CVAnalysis:
@@ -491,34 +571,340 @@ class OllamaCVProcessor:
             print(f"[ERROR] Error guardando CV: {e}")
             raise Exception(f"Error guardando CV: {e}")
 
+    def determine_company_industry(self, empresa_nombre, descripcion=""):
+        """
+        Determina la industria específica de una empresa
+        Versión expandida para todos los sectores
+        """
+        texto = f"{empresa_nombre} {descripcion}".lower()
+        
+        # Empresas específicas conocidas (expandido)
+        known_companies = {
+            # Tecnología
+            'google': 'Tecnología', 'microsoft': 'Tecnología', 'amazon': 'Tecnología',
+            'meta': 'Tecnología', 'facebook': 'Tecnología', 'netflix': 'Tecnología',
+            'uber': 'Tecnología', 'airbnb': 'Tecnología', 'merit': 'Tecnología',
+            'oracle': 'Tecnología', 'salesforce': 'Tecnología', 'ibm': 'Tecnología',
+            
+            # Salud
+            'hospital': 'Salud', 'clínica': 'Salud', 'sanatorio': 'Salud',
+            'pfizer': 'Salud', 'johnson': 'Salud', 'roche': 'Salud',
+            
+            # Finanzas
+            'banco': 'Finanzas', 'itaú': 'Finanzas', 'santander': 'Finanzas',
+            'bbva': 'Finanzas', 'continental': 'Finanzas', 'hsbc': 'Finanzas',
+            
+            # Educación
+            'universidad': 'Educación', 'uca': 'Educación', 'uct': 'Educación',
+            'uninorte': 'Educación', 'colegio': 'Educación',
+            
+            # Retail
+            'walmart': 'Retail', 'carrefour': 'Retail', 'stock': 'Retail',
+            'superseis': 'Retail', 'biggie': 'Retail',
+            
+            # Telecomunicaciones
+            'tigo': 'Telecomunicaciones', 'personal': 'Telecomunicaciones',
+            'claro': 'Telecomunicaciones', 'copaco': 'Telecomunicaciones',
+            
+            # Agropecuario
+            'cargill': 'Agropecuario', 'adr': 'Agropecuario', 'agrotec': 'Agropecuario',
+            
+            # Construcción
+            'constructora': 'Construcción', 'inmobiliaria': 'Construcción'
+        }
+        
+        for company, industry in known_companies.items():
+            if company in texto:
+                return self.get_or_create_industry(industry)
+        
+        # Palabras clave por industria (expandido)
+        industry_keywords = {
+            'Tecnología': ['software', 'desarrollo', 'programación', 'sistemas', 'it', 'tech', 'digital', 'app', 'web'],
+            
+            'Salud': ['salud', 'médico', 'hospital', 'clínica', 'farmacia', 'medicina', 'enfermería', 'odontología', 'psicología'],
+            
+            'Finanzas': ['banco', 'financiero', 'seguros', 'inversión', 'crédito', 'fintech', 'contabilidad', 'auditoría'],
+            
+            'Educación': ['educación', 'universidad', 'colegio', 'instituto', 'enseñanza', 'académico', 'capacitación', 'curso'],
+            
+            'Manufactura': ['manufactura', 'fábrica', 'producción', 'industrial', 'planta', 'operaciones', 'lean', 'calidad'],
+            
+            'Retail': ['retail', 'ventas', 'comercio', 'tienda', 'supermercado', 'comercial', 'customer', 'cliente'],
+            
+            'Servicios': ['consultoría', 'servicios', 'asesoría', 'consultores', 'gestión', 'administración'],
+            
+            'Marketing': ['marketing', 'publicidad', 'comunicación', 'branding', 'social media', 'seo', 'sem', 'campaña'],
+            
+            'Recursos Humanos': ['recursos humanos', 'rrhh', 'reclutamiento', 'talento', 'personal', 'hr'],
+            
+            'Legal': ['legal', 'abogado', 'derecho', 'jurídico', 'compliance', 'contratos', 'litigation'],
+            
+            'Ingeniería': ['ingeniería', 'ingeniero', 'civil', 'mecánica', 'eléctrica', 'química', 'proyecto'],
+            
+            'Arquitectura': ['arquitectura', 'arquitecto', 'diseño arquitectónico', 'planos', 'construcción'],
+            
+            'Construcción': ['construcción', 'obra', 'inmobiliario', 'contractor', 'builder'],
+            
+            'Diseño': ['diseño', 'gráfico', 'creativo', 'arte', 'multimedia', 'ux', 'ui', 'visual'],
+            
+            'Logística': ['logística', 'transporte', 'supply chain', 'almacén', 'distribución', 'warehouse'],
+            
+            'Agropecuario': ['agro', 'agronomía', 'veterinaria', 'ganadería', 'agricultura', 'campo', 'rural'],
+            
+            'Turismo': ['turismo', 'hotel', 'hotelería', 'gastronomía', 'restaurante', 'travel', 'hospitality'],
+            
+            'Energía': ['energía', 'petróleo', 'gas', 'electricidad', 'utilities', 'power', 'oil'],
+            
+            'Telecomunicaciones': ['telecomunicaciones', 'telecom', 'comunicaciones', 'telefónica', 'móvil']
+        }
+        
+        for industry, keywords in industry_keywords.items():
+            for keyword in keywords:
+                if keyword in texto:
+                    return self.get_or_create_industry(industry)
+        
+        # Si no se puede determinar, retornar None para usar la industria principal
+        return None
+
+    def get_or_create_skill(self, nombre: str, industria=None):
+        """Obtener o crear habilidad (expandido para todas las competencias profesionales)"""
+        habilidad = self.session.query(Habilidad).filter(
+            Habilidad.nombre.ilike(f"%{nombre}%")
+        ).first()
+        
+        if not habilidad:
+            # Determinar categoría basada en el tipo de habilidad y industria
+            categoria_nombre = self._determine_skill_category(nombre, industria)
+            
+            categoria = self.session.query(CategoriaHabilidad).filter(
+                CategoriaHabilidad.nombre == categoria_nombre
+            ).first()
+            
+            if not categoria:
+                categoria = CategoriaHabilidad(
+                    nombre=categoria_nombre,
+                    descripcion=f"Habilidades de {categoria_nombre.lower()}"
+                )
+                self.session.add(categoria)
+                self.session.flush()
+            
+            habilidad = Habilidad(
+                nombre=nombre,
+                id_categoria=categoria.id,
+                id_industria=industria.id if industria else None
+            )
+            self.session.add(habilidad)
+            self.session.flush()
+            
+        return habilidad
+
+
+    def _determine_skill_category(self, skill_name: str, industria=None):
+        """Determina la categoría de una habilidad basada en su nombre e industria"""
+        skill_lower = skill_name.lower()
+        
+        # Categorías técnicas por industria
+        technical_keywords = {
+            'Programación': ['python', 'java', 'javascript', 'c#', 'php', 'ruby', 'go', 'swift', 'kotlin'],
+            'Frameworks': ['react', 'angular', 'vue', 'django', 'spring', 'laravel', 'express', 'flask'],
+            'Bases de Datos': ['mysql', 'postgresql', 'mongodb', 'oracle', 'sql server', 'redis', 'cassandra'],
+            'Cloud y DevOps': ['aws', 'azure', 'google cloud', 'docker', 'kubernetes', 'jenkins', 'terraform'],
+            'Marketing Digital': ['google ads', 'facebook ads', 'seo', 'sem', 'google analytics', 'mailchimp'],
+            'CRM y Ventas': ['salesforce', 'hubspot', 'pipedrive', 'zoho', 'dynamics'],
+            'Finanzas': ['sap', 'erp', 'excel avanzado', 'power bi', 'tableau', 'quickbooks', 'tango'],
+            'Diseño': ['photoshop', 'illustrator', 'figma', 'sketch', 'indesign', 'autocad', 'solidworks'],
+            'Salud': ['his', 'emr', 'pacs', 'epic', 'meditech'],
+            'Legal': ['lexisnexis', 'westlaw', 'thomson reuters'],
+            'Recursos Humanos': ['workday', 'bamboohr', 'sap successfactors', 'adp'],
+            'Operaciones': ['lean', 'six sigma', 'kaizen', 'wms', 'mes'],
+            'Agropecuario': ['gis', 'precision agriculture', 'farm management'],
+            'Office Suite': ['microsoft office', 'excel', 'word', 'powerpoint', 'google workspace', 'sheets'],
+            'Gestión de Proyectos': ['pmp', 'scrum', 'agile', 'kanban', 'jira', 'trello', 'asana'],
+            'Idiomas': ['inglés', 'portugués', 'alemán', 'francés', 'italiano', 'chino', 'japonés'],
+            'Certificaciones': ['certified', 'certification', 'certificado', 'certificación'],
+            'Metodologías': ['agile', 'scrum', 'kanban', 'waterfall', 'lean', 'six sigma', 'itil']
+        }
+        
+        # Buscar categoría específica
+        for category, keywords in technical_keywords.items():
+            for keyword in keywords:
+                if keyword in skill_lower:
+                    return category
+        
+        # Categorías por industria si no hay match específico
+        industry_categories = {
+            'Tecnología': 'Técnica',
+            'Marketing': 'Marketing Digital',
+            'Finanzas': 'Finanzas',
+            'Salud': 'Salud',
+            'Legal': 'Legal',
+            'Diseño': 'Diseño',
+            'Recursos Humanos': 'Recursos Humanos',
+            'Agropecuario': 'Agropecuario'
+        }
+        
+        if industria and industria.nombre in industry_categories:
+            return industry_categories[industria.nombre]
+        
+        # Determinar si es soft skill
+        soft_skills = [
+            'liderazgo', 'comunicación', 'trabajo en equipo', 'resolución de problemas',
+            'pensamiento crítico', 'creatividad', 'adaptabilidad', 'gestión del tiempo',
+            'negociación', 'presentaciones', 'atención al cliente', 'organización'
+        ]
+        
+        for soft_skill in soft_skills:
+            if soft_skill in skill_lower:
+                return 'Soft Skills'
+        
+        # Por defecto
+        return 'Técnica' 
+
     def determine_main_industry(self, analysis):
         """
         Determina la industria principal basada en el sector mencionado y experiencias
+        Versión mejorada para todos los campos profesionales
         """
-        # Mapeo de términos a industrias
+        # Mapeo expandido de términos a industrias
         industry_mapping = {
+            # Tecnología
             'tecnología': 'Tecnología',
             'software': 'Tecnología', 
             'informática': 'Tecnología',
             'it': 'Tecnología',
             'desarrollo': 'Tecnología',
+            'programación': 'Tecnología',
+            'sistemas': 'Tecnología',
+            
+            # Salud
             'salud': 'Salud',
             'medicina': 'Salud',
+            'médico': 'Salud',
             'hospital': 'Salud',
+            'clínica': 'Salud',
+            'enfermería': 'Salud',
+            'farmacia': 'Salud',
+            'psicología': 'Salud',
+            'odontología': 'Salud',
+            'fisioterapia': 'Salud',
+            
+            # Finanzas
             'finanzas': 'Finanzas',
             'banco': 'Finanzas',
             'financiero': 'Finanzas',
+            'contabilidad': 'Finanzas',
+            'auditoría': 'Finanzas',
+            'seguros': 'Finanzas',
+            'inversiones': 'Finanzas',
+            'tesorería': 'Finanzas',
+            
+            # Educación
             'educación': 'Educación',
             'universidad': 'Educación',
             'enseñanza': 'Educación',
+            'docencia': 'Educación',
+            'colegio': 'Educación',
+            'instituto': 'Educación',
+            'capacitación': 'Educación',
+            'académico': 'Educación',
+            
+            # Manufactura e Industria
             'manufactura': 'Manufactura',
             'producción': 'Manufactura',
             'fábrica': 'Manufactura',
+            'industrial': 'Manufactura',
+            'planta': 'Manufactura',
+            'operaciones': 'Manufactura',
+            
+            # Marketing y Publicidad
+            'marketing': 'Marketing',
+            'publicidad': 'Marketing',
+            'comunicación': 'Marketing',
+            'branding': 'Marketing',
+            'digital': 'Marketing',
+            'social media': 'Marketing',
+            
+            # Ventas y Retail
+            'ventas': 'Retail',
+            'retail': 'Retail',
+            'comercio': 'Retail',
+            'tienda': 'Retail',
+            'supermercado': 'Retail',
+            'comercial': 'Retail',
+            
+            # Consultoría y Servicios
             'consultoría': 'Servicios',
             'servicios': 'Servicios',
-            'retail': 'Retail',
-            'ventas': 'Retail',
-            'comercio': 'Retail'
+            'asesoría': 'Servicios',
+            'consultores': 'Servicios',
+            
+            # Recursos Humanos
+            'recursos humanos': 'Recursos Humanos',
+            'rrhh': 'Recursos Humanos',
+            'reclutamiento': 'Recursos Humanos',
+            'talento': 'Recursos Humanos',
+            'personal': 'Recursos Humanos',
+            
+            # Legal
+            'legal': 'Legal',
+            'abogado': 'Legal',
+            'derecho': 'Legal',
+            'jurídico': 'Legal',
+            'compliance': 'Legal',
+            
+            # Ingeniería
+            'ingeniería': 'Ingeniería',
+            'ingeniero': 'Ingeniería',
+            'civil': 'Ingeniería',
+            'mecánica': 'Ingeniería',
+            'eléctrica': 'Ingeniería',
+            'química': 'Ingeniería',
+            
+            # Arquitectura y Construcción
+            'arquitectura': 'Arquitectura',
+            'construcción': 'Construcción',
+            'obra': 'Construcción',
+            'inmobiliario': 'Construcción',
+            
+            # Diseño y Creatividad
+            'diseño': 'Diseño',
+            'gráfico': 'Diseño',
+            'creativo': 'Diseño',
+            'arte': 'Diseño',
+            'multimedia': 'Diseño',
+            
+            # Logística y Transporte
+            'logística': 'Logística',
+            'transporte': 'Logística',
+            'supply chain': 'Logística',
+            'almacén': 'Logística',
+            'distribución': 'Logística',
+            
+            # Agro y Veterinaria
+            'agro': 'Agropecuario',
+            'agronomía': 'Agropecuario',
+            'veterinaria': 'Agropecuario',
+            'ganadería': 'Agropecuario',
+            'agricultura': 'Agropecuario',
+            
+            # Turismo y Hotelería
+            'turismo': 'Turismo',
+            'hotel': 'Turismo',
+            'hotelería': 'Turismo',
+            'gastronomía': 'Turismo',
+            'restaurante': 'Turismo',
+            
+            # Energía y Utilities
+            'energía': 'Energía',
+            'petróleo': 'Energía',
+            'gas': 'Energía',
+            'electricidad': 'Energía',
+            'utilities': 'Energía',
+            
+            # Telecomunicaciones
+            'telecomunicaciones': 'Telecomunicaciones',
+            'telecom': 'Telecomunicaciones',
+            'comunicaciones': 'Telecomunicaciones'
         }
         
         # Primero intentar con el sector del análisis
@@ -533,8 +919,9 @@ class OllamaCVProcessor:
         for exp in analysis.experiencias:
             if isinstance(exp, dict):
                 empresa = exp.get('empresa', '').lower()
+                puesto = exp.get('puesto', '').lower()
                 descripcion = exp.get('descripcion', '').lower()
-                texto_completo = f"{empresa} {descripcion}"
+                texto_completo = f"{empresa} {puesto} {descripcion}"
                 
                 for key, industry in industry_mapping.items():
                     if key in texto_completo:
@@ -547,52 +934,6 @@ class OllamaCVProcessor:
         
         # Por defecto, usar "General"
         return self.get_or_create_industry("General")
-
-    def determine_company_industry(self, empresa_nombre, descripcion=""):
-        """
-        Determina la industria específica de una empresa
-        """
-        texto = f"{empresa_nombre} {descripcion}".lower()
-        
-        # Empresas específicas conocidas
-        known_companies = {
-            'google': 'Tecnología',
-            'microsoft': 'Tecnología',
-            'amazon': 'Tecnología',
-            'meta': 'Tecnología',
-            'facebook': 'Tecnología',
-            'netflix': 'Tecnología',
-            'uber': 'Tecnología',
-            'airbnb': 'Tecnología',
-            'merit': 'Tecnología',  # Del ejemplo del CV
-            'hospital': 'Salud',
-            'clínica': 'Salud',
-            'banco': 'Finanzas',
-            'universidad': 'Educación'
-        }
-        
-        for company, industry in known_companies.items():
-            if company in texto:
-                return self.get_or_create_industry(industry)
-        
-        # Palabras clave por industria
-        industry_keywords = {
-            'Tecnología': ['software', 'desarrollo', 'programación', 'sistemas', 'it', 'tech', 'digital'],
-            'Salud': ['salud', 'médico', 'hospital', 'clínica', 'farmacia', 'medicina'],
-            'Finanzas': ['banco', 'financiero', 'seguros', 'inversión', 'crédito', 'fintech'],
-            'Educación': ['educación', 'universidad', 'colegio', 'instituto', 'enseñanza', 'académico'],
-            'Manufactura': ['manufactura', 'fábrica', 'producción', 'industrial', 'planta'],
-            'Retail': ['retail', 'ventas', 'comercio', 'tienda', 'supermercado'],
-            'Servicios': ['consultoría', 'servicios', 'asesoría', 'consultores']
-        }
-        
-        for industry, keywords in industry_keywords.items():
-            for keyword in keywords:
-                if keyword in texto:
-                    return self.get_or_create_industry(industry)
-        
-        # Si no se puede determinar, retornar None para usar la industria principal
-        return None
     
     def get_or_create_industry(self, nombre: str):
         """Obtener o crear industria"""
@@ -609,6 +950,137 @@ class OllamaCVProcessor:
             self.session.flush()
             
         return industria
+
+    def get_or_create_role(self, rol_nombre: str):
+        """Obtener o crear rol (expandido para todas las profesiones)"""
+        if not rol_nombre or rol_nombre.lower() in ['n/a', '']:
+            return None
+            
+        rol = self.session.query(Rol).filter(
+            Rol.nombre.ilike(f"%{rol_nombre}%")
+        ).first()
+        
+        if not rol:
+            # Mapeo expandido de roles por industria
+            role_mapping = {
+                # Tecnología
+                'pasante': 'Pasante', 'intern': 'Pasante', 'trainee': 'Trainee',
+                'desarrollador backend': 'Desarrollador Backend', 'backend developer': 'Desarrollador Backend',
+                'desarrollador frontend': 'Desarrollador Frontend', 'frontend developer': 'Desarrollador Frontend',
+                'full stack': 'Desarrollador Full Stack', 'fullstack': 'Desarrollador Full Stack',
+                'analista': 'Analista de Sistemas', 'systems analyst': 'Analista de Sistemas',
+                'qa': 'QA Tester', 'tester': 'QA Tester', 'quality assurance': 'QA Tester',
+                'devops': 'DevOps Engineer', 'sysadmin': 'Administrador de Sistemas',
+                'data analyst': 'Data Analyst', 'data scientist': 'Data Scientist',
+                'project manager': 'Project Manager', 'product manager': 'Product Manager',
+                
+                # Marketing y Ventas
+                'marketing digital': 'Marketing Digital', 'digital marketing': 'Marketing Digital',
+                'community manager': 'Community Manager', 'social media': 'Social Media Manager',
+                'seo specialist': 'SEO Specialist', 'sem specialist': 'SEM Specialist',
+                'vendedor': 'Representante de Ventas', 'sales rep': 'Representante de Ventas',
+                'account manager': 'Account Manager', 'business development': 'Business Development',
+                'brand manager': 'Brand Manager', 'marketing manager': 'Marketing Manager',
+                
+                # Finanzas y Contabilidad
+                'contador': 'Contador', 'accountant': 'Contador',
+                'analista financiero': 'Analista Financiero', 'financial analyst': 'Analista Financiero',
+                'auditor': 'Auditor', 'tesorero': 'Tesorero', 'treasurer': 'Tesorero',
+                'controller': 'Controller Financiero', 'credit analyst': 'Analista de Crédito',
+                
+                # Recursos Humanos
+                'reclutador': 'Especialista en Reclutamiento', 'recruiter': 'Especialista en Reclutamiento',
+                'hr generalist': 'Generalista de RRHH', 'hr specialist': 'Especialista de RRHH',
+                'compensation analyst': 'Analista de Compensaciones',
+                'training coordinator': 'Coordinador de Capacitación',
+                
+                # Operaciones y Logística
+                'operations manager': 'Gerente de Operaciones', 'supply chain': 'Supply Chain Analyst',
+                'warehouse manager': 'Gerente de Almacén', 'logistics coordinator': 'Coordinador Logístico',
+                'production manager': 'Gerente de Producción', 'quality manager': 'Gerente de Calidad',
+                
+                # Salud
+                'médico': 'Médico', 'doctor': 'Médico', 'enfermero': 'Enfermero', 'nurse': 'Enfermero',
+                'psicólogo': 'Psicólogo', 'psychologist': 'Psicólogo',
+                'farmacéutico': 'Farmacéutico', 'pharmacist': 'Farmacéutico',
+                'fisioterapeuta': 'Fisioterapeuta', 'therapist': 'Terapeuta',
+                'odontólogo': 'Odontólogo', 'dentist': 'Odontólogo',
+                
+                # Legal
+                'abogado': 'Abogado', 'lawyer': 'Abogado', 'attorney': 'Abogado',
+                'paralegal': 'Paralegal', 'legal assistant': 'Asistente Legal',
+                'compliance officer': 'Oficial de Cumplimiento',
+                
+                # Educación
+                'profesor': 'Profesor', 'teacher': 'Profesor', 'docente': 'Docente',
+                'instructor': 'Instructor', 'coordinator': 'Coordinador Académico',
+                'director académico': 'Director Académico', 'academic director': 'Director Académico',
+                
+                # Ingeniería
+                'ingeniero civil': 'Ingeniero Civil', 'civil engineer': 'Ingeniero Civil',
+                'ingeniero industrial': 'Ingeniero Industrial', 'industrial engineer': 'Ingeniero Industrial',
+                'ingeniero mecánico': 'Ingeniero Mecánico', 'mechanical engineer': 'Ingeniero Mecánico',
+                'ingeniero eléctrico': 'Ingeniero Eléctrico', 'electrical engineer': 'Ingeniero Eléctrico',
+                'ingeniero químico': 'Ingeniero Químico', 'chemical engineer': 'Ingeniero Químico',
+                
+                # Arquitectura y Construcción
+                'arquitecto': 'Arquitecto', 'architect': 'Arquitecto',
+                'project manager construcción': 'Project Manager - Construcción',
+                'supervisor de obra': 'Supervisor de Obra', 'construction supervisor': 'Supervisor de Obra',
+                'maestro mayor de obras': 'Maestro Mayor de Obras',
+                
+                # Diseño y Creatividad
+                'diseñador gráfico': 'Diseñador Gráfico', 'graphic designer': 'Diseñador Gráfico',
+                'diseñador ux': 'Diseñador UX', 'ux designer': 'Diseñador UX',
+                'diseñador ui': 'Diseñador UI', 'ui designer': 'Diseñador UI',
+                'director de arte': 'Director de Arte', 'art director': 'Director de Arte',
+                'fotógrafo': 'Fotógrafo', 'photographer': 'Fotógrafo',
+                
+                # Agropecuario
+                'ingeniero agrónomo': 'Ingeniero Agrónomo', 'agronomist': 'Ingeniero Agrónomo',
+                'veterinario': 'Veterinario', 'veterinarian': 'Veterinario',
+                'técnico agropecuario': 'Técnico Agropecuario',
+                
+                # Turismo y Hotelería
+                'chef': 'Chef', 'cook': 'Cocinero',
+                'gerente de hotel': 'Gerente Hotelero', 'hotel manager': 'Gerente Hotelero',
+                'recepcionista': 'Recepcionista', 'receptionist': 'Recepcionista',
+                'guía turístico': 'Guía Turístico', 'tour guide': 'Guía Turístico',
+                
+                # Roles Generales
+                'gerente': 'Gerente', 'manager': 'Gerente',
+                'supervisor': 'Supervisor', 'coordinator': 'Coordinador',
+                'assistant': 'Asistente', 'asistente': 'Asistente',
+                'specialist': 'Especialista', 'especialista': 'Especialista',
+                'consultor': 'Consultor', 'consultant': 'Consultor',
+                'director': 'Director', 'jefe': 'Jefe de Área'
+            }
+            
+            # Buscar mapeo exacto primero
+            rol_lower = rol_nombre.lower().strip()
+            if rol_lower in role_mapping:
+                rol_normalizado = role_mapping[rol_lower]
+            else:
+                # Buscar coincidencias parciales
+                rol_normalizado = None
+                for key, value in role_mapping.items():
+                    if key in rol_lower or rol_lower in key:
+                        rol_normalizado = value
+                        break
+                
+                # Si no hay coincidencia, usar el título original formateado
+                if not rol_normalizado:
+                    rol_normalizado = rol_nombre.title()
+            
+            rol = Rol(
+                nombre=rol_normalizado,
+                descripcion=f"Rol de {rol_normalizado.lower()}"
+            )
+            self.session.add(rol)
+            self.session.flush()
+            
+        return rol
+
 
     def get_or_create_role(self, rol_nombre: str):
         """Obtener o crear rol (independiente de industria)"""
@@ -653,6 +1125,8 @@ class OllamaCVProcessor:
             self.session.flush()
             
         return rol
+
+
 
     def get_or_create_seniority_level(self, seniority: str, anos_experiencia: int = 0):
         """Obtener o crear nivel de seniority"""
@@ -754,6 +1228,7 @@ class OllamaCVProcessor:
 
     def get_or_create_language(self, nombre: str):
         """Obtener o crear idioma"""
+
         # Mapear nombres a códigos ISO
         language_mapping = {
             'español': ('Español', 'es'),
@@ -773,22 +1248,27 @@ class OllamaCVProcessor:
             'chinese': ('Chino', 'zh'),
             'chino': ('Chino', 'zh')
         }
-        
+
         nombre_lower = nombre.lower()
-        nombre_normalizado, iso_code = language_mapping.get(nombre_lower, (nombre.title(), nombre.lower()[:2]))
-        
+        nombre_normalizado, iso_code = language_mapping.get(
+            nombre_lower, (nombre.title(), nombre.lower()[:2])
+        )
+
+        # Buscar por nombre o iso_code exactamente
         idioma = self.session.query(Lenguaje).filter(
-            Lenguaje.nombre.ilike(f"%{nombre_normalizado}%")
+            (Lenguaje.nombre.ilike(nombre_normalizado)) |
+            (Lenguaje.iso_code == iso_code)
         ).first()
-        
+
+        # Crear si no existe
         if not idioma:
             idioma = Lenguaje(
                 nombre=nombre_normalizado,
                 iso_code=iso_code
             )
             self.session.add(idioma)
-            self.session.flush()
-            
+            self.session.flush()  # Asegura que tenga un ID generado
+        
         return idioma
 
     # MÉTODO PARA DEBUGGING - Ver cómo se clasificó un CV
