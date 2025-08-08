@@ -120,7 +120,6 @@ ${busqueda ? `Descripción adicional: ${busqueda}` : ""}
       const data = await response.json();
       setSearchResults(data.matches || []);
 
-      // Cambiar a la pestaña de candidatos si hay resultados
       if (data.matches && data.matches.length > 0) {
         setActiveTab("candidates");
       }
@@ -133,35 +132,92 @@ ${busqueda ? `Descripción adicional: ${busqueda}` : ""}
     }
   };
 
-  // CONSULTA CON LLM
+  // CONSULTA CON LLM - MODIFICADA para buscar candidatos también
   const consultarLLM = async (texto) => {
     try {
       setLoadingChat(true);
 
-      const params = new URLSearchParams({
+      // Primero hacemos la consulta al LLM para obtener la respuesta
+      const chatParams = new URLSearchParams({
         query: texto,
       });
 
       // Agregar filtros de contexto si están disponibles
       if (filtros.area) {
-        params.append("industry_filter", filtros.area);
+        chatParams.append("industry_filter", filtros.area);
       }
 
       if (filtros.experiencia) {
         const exp = parseInt(filtros.experiencia);
         if (exp >= 3) {
-          params.append("min_score", "60");
+          chatParams.append("min_score", "60");
         }
       }
 
-      const response = await fetch(`http://localhost:8000/ask?${params}`);
+      const chatResponse = await fetch(
+        `http://localhost:8000/ask?${chatParams}`
+      );
 
-      if (!response.ok) {
-        throw new Error(`Error ${response.status}: ${await response.text()}`);
+      if (!chatResponse.ok) {
+        throw new Error(
+          `Error ${chatResponse.status}: ${await chatResponse.text()}`
+        );
       }
 
-      const data = await response.json();
-      setChatResponse(data.answer || "No se recibió respuesta del modelo.");
+      const chatData = await chatResponse.json();
+      setChatResponse(chatData.answer || "No se recibió respuesta del modelo.");
+
+      // Ahora también buscamos candidatos relacionados
+      const searchParams = new URLSearchParams({
+        query: texto,
+        n_results: "10",
+        use_embeddings: "true",
+      });
+
+      // Aplicar los mismos filtros que en la búsqueda avanzada
+      if (filtros.area) {
+        const industryMap = {
+          Tecnología: "Tecnología",
+          Salud: "Salud",
+          Educación: "Educación",
+          Marketing: "Marketing",
+          Ventas: "Ventas",
+          Administración: "Administración",
+          Legal: "Legal",
+          Ingeniería: "Ingeniería",
+          Logística: "Logística",
+          Diseño: "Diseño",
+        };
+
+        if (industryMap[filtros.area]) {
+          searchParams.append("industry_filter", industryMap[filtros.area]);
+        }
+      }
+
+      if (filtros.experiencia) {
+        const exp = parseInt(filtros.experiencia);
+        if (exp >= 5) {
+          searchParams.append("min_score", "70");
+        } else if (exp >= 2) {
+          searchParams.append("min_score", "50");
+        } else {
+          searchParams.append("min_score", "30");
+        }
+      }
+
+      const searchResponse = await fetch(
+        `http://localhost:8000/search?${searchParams}`
+      );
+
+      if (searchResponse.ok) {
+        const searchData = await searchResponse.json();
+        setSearchResults(searchData.matches || []);
+
+        // Cambiar a la pestaña de candidatos si hay resultados
+        if (searchData.matches && searchData.matches.length > 0) {
+          setActiveTab("candidates");
+        }
+      }
     } catch (error) {
       console.error("Error en chat:", error);
       setChatResponse(`❌ Error al consultar al modelo: ${error.message}`);
@@ -181,26 +237,57 @@ ${busqueda ? `Descripción adicional: ${busqueda}` : ""}
   };
 
   // Función para obtener detalles completos de un candidato
-  const verDetallesCandidato = async (cvId) => {
+  const verDetallesCandidato = async (candidate) => {
+    // Intentar diferentes campos para el ID
+    const possibleIds = [
+      candidate.cv_id,
+      candidate.id,
+      candidate.document_id,
+      candidate.file_id,
+    ].filter(Boolean);
+
+    console.log("Candidato completo:", candidate);
+    console.log("IDs posibles:", possibleIds);
+
     if (onCandidateSelect) {
-      // Si tenemos la función de navegación, úsala
-      onCandidateSelect(cvId);
+      // Probar con el primer ID válido
+      const candidateId = possibleIds[0];
+      if (candidateId) {
+        onCandidateSelect(candidateId);
+      } else {
+        alert("No se pudo determinar el ID del candidato");
+      }
     } else {
-      // Fallback: mostrar detalles en modal/alert
-      try {
-        const response = await fetch(
-          `http://localhost:8000/cv/${cvId}/analysis`
-        );
-        if (response.ok) {
-          const data = await response.json();
-          console.log("Detalles del candidato:", data);
-          alert(
-            `Candidato: ${data.personal_info.nombre}\nEmail: ${data.personal_info.email}\nScore: ${data.cv_info.overall_score}`
+      // Fallback: intentar con cada ID hasta que uno funcione
+      let success = false;
+
+      for (const id of possibleIds) {
+        try {
+          console.log(`Intentando con ID: ${id}`);
+          const response = await fetch(
+            `http://localhost:8000/cv/${id}/analysis`
           );
+
+          if (response.ok) {
+            const data = await response.json();
+            console.log("Detalles del candidato:", data);
+            alert(
+              `Candidato: ${data.personal_info.nombre}\nEmail: ${data.personal_info.email}\nScore: ${data.cv_info.overall_score}`
+            );
+            success = true;
+            break;
+          } else {
+            console.log(`ID ${id} no funcionó: ${response.status}`);
+          }
+        } catch (error) {
+          console.error(`Error con ID ${id}:`, error);
         }
-      } catch (error) {
-        console.error("Error obteniendo detalles:", error);
-        alert("Error al obtener detalles del candidato");
+      }
+
+      if (!success) {
+        alert(
+          "No se pudieron obtener los detalles del candidato. Revisa la consola para más información."
+        );
       }
     }
   };
@@ -388,8 +475,8 @@ ${busqueda ? `Descripción adicional: ${busqueda}` : ""}
                 </button>
               </div>
 
-              {/* Respuesta del Chat */}
-              {chatResponse && (
+              {/* Respuesta del Chat - Solo se muestra si no hay candidatos o si hay respuesta */}
+              {chatResponse && searchResults.length === 0 && (
                 <div className="mt-4 p-4 bg-gray-50 rounded-md border">
                   <h3 className="font-medium mb-2">
                     Recomendación del Reclutador IA:
@@ -397,6 +484,16 @@ ${busqueda ? `Descripción adicional: ${busqueda}` : ""}
                   <div className="text-sm text-gray-700 whitespace-pre-wrap">
                     {chatResponse}
                   </div>
+                </div>
+              )}
+
+              {/* Mensaje cuando hay candidatos encontrados */}
+              {chatResponse && searchResults.length > 0 && (
+                <div className="mt-4 p-4 bg-blue-50 rounded-md border border-blue-200">
+                  <p className="text-sm text-blue-800">
+                    ✅ Consulta procesada. Se encontraron {searchResults.length}{" "}
+                    candidatos. Ve a la pestaña "Candidatos" para verlos.
+                  </p>
                 </div>
               )}
             </div>
@@ -408,13 +505,33 @@ ${busqueda ? `Descripción adicional: ${busqueda}` : ""}
           <div className="space-y-4">
             <div className="flex justify-between items-center">
               <h2 className="text-2xl font-bold">Candidatos Encontrados</h2>
-              <button
-                onClick={() => setActiveTab("search")}
-                className="px-4 py-2 bg-gray-600 rounded-md hover:bg-gray-500 transition"
-              >
-                Nueva búsqueda
-              </button>
+              <div className="flex gap-3">
+                {/* Mostrar respuesta del chat si existe */}
+                {chatResponse && (
+                  <div className="text-sm text-gray-300 max-w-md">
+                    Recomendación IA disponible
+                  </div>
+                )}
+                <button
+                  onClick={() => setActiveTab("search")}
+                  className="px-4 py-2 bg-gray-600 rounded-md hover:bg-gray-500 transition"
+                >
+                  Nueva búsqueda
+                </button>
+              </div>
             </div>
+
+            {/* Respuesta del Chat en la pestaña de candidatos */}
+            {chatResponse && (
+              <div className="bg-white text-black rounded-xl p-4 mb-4">
+                <h3 className="font-medium mb-2">
+                  Recomendación del Reclutador IA:
+                </h3>
+                <div className="text-sm text-gray-700 whitespace-pre-wrap">
+                  {chatResponse}
+                </div>
+              </div>
+            )}
 
             {searchResults.length === 0 ? (
               <div className="text-center py-12 bg-gray-700 rounded-xl">

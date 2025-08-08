@@ -26,6 +26,8 @@ model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
 load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")
 
+
+
 # ========== CONFIGURACIÓN BÁSICA ==========
 app = FastAPI(title="CV Analysis API with Ollama", version="2.0.0")
 app.add_middleware(
@@ -115,8 +117,11 @@ else:
     collection = chroma_client.create_collection(name=collection_name)
     print(" Colección creada")
 
+
 # ========== UTILIDAD PARA EXTRAER TEXTO DE PDF ==========
 def extract_text_from_pdf(file) -> str:
+    for doc in collection.get(include=["documents"])["documents"]:
+        print(doc)
     try:
         with pdfplumber.open(file) as pdf:
             text = "\n".join(page.extract_text() or "" for page in pdf.pages)
@@ -857,8 +862,6 @@ def ask_llm_enhanced(
         logger.error(f"❌ Error en ask_llm_enhanced: {e}")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Error procesando consulta: {str(e)}")
-
-
 
 # ========== ENDPOINTS ADICIONALES ==========
 
