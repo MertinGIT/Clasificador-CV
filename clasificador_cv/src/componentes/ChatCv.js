@@ -265,7 +265,7 @@ ${busqueda ? `Descripción adicional: ${busqueda}` : ""}
         try {
           console.log(`Intentando con ID: ${id}`);
           const response = await fetch(
-            `http://localhost:8000/cv/${id}/analysis`
+            `http://localhost:8000/cv/${id}/analisis-completo`
           );
 
           if (response.ok) {
